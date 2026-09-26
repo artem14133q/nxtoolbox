@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepares the Python files that ship inside nxtest.nro (RomFS) and the manifest for
+"""Prepares the Python files that ship inside NXToolBox.nro (RomFS) and the manifest for
 online updates. The Makefile runs it before every build.
 
 Creates:
@@ -9,7 +9,7 @@ Creates:
     romfs/update_url.txt                copy of update_url.txt, if it exists
     update.json                         manifest for online updates: commit and push it
 
-On the Switch the app copies romfs/ to /switch/nxtest/sys/ whenever the bundled VERSION
+On the Switch the app copies romfs/ to /switch/NXToolBox/sys/ whenever the bundled VERSION
 is newer than the installed one. The launcher checks update_url.txt (the raw URL of
 update.json in your repository) once per start and offers to install newer versions.
 """

@@ -1,5 +1,5 @@
 {
-  "version": "20260926224619",
+  "version": "20260926231547",
   "files": {
     "launcher.py": "app/launcher.py",
     "lib/installer.py": "lib/installer.py",

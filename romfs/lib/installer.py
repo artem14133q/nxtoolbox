@@ -1,4 +1,4 @@
-"""installer - downloads scripts into /switch/nxtest/scripts from GitHub, plain URLs
+"""installer - downloads scripts into /switch/NXToolBox/scripts from GitHub, plain URLs
 and script catalogs. Used by the "Get scripts" screen (lib/store.py), usable from scripts.
 
 GitHub URLs:
@@ -19,10 +19,10 @@ import os
 import json
 import requests
 
-NXTEST = "/switch/nxtest"
-SCRIPTS = NXTEST + "/scripts"
-CATALOGS_FILE = NXTEST + "/catalogs.txt"
-INSTALLED_FILE = NXTEST + "/installed.json"
+NXToolBox = "/switch/NXToolBox"
+SCRIPTS = NXToolBox + "/scripts"
+CATALOGS_FILE = NXToolBox + "/catalogs.txt"
+INSTALLED_FILE = NXToolBox + "/installed.json"
 GITHUB_API = "https://api.github.com/repos/%s/%s/contents/%s"
 GITHUB_RAW = "https://raw.githubusercontent.com/%s/%s/%s/%s"
 
@@ -232,7 +232,7 @@ def install_package(catalog_url, package, progress=_quiet):
 
 # ---------- updates of the app's own Python files ----------
 
-SYS = NXTEST + "/sys"                           # bundled files (launcher.py, lib/)
+SYS = NXToolBox + "/sys"                           # bundled files (launcher.py, lib/)
 
 
 def _read_line(path):
@@ -244,8 +244,8 @@ def _read_line(path):
 
 
 def update_url():
-    """URL of update.json: /switch/nxtest/update_url.txt overrides the bundled one."""
-    return _read_line(NXTEST + "/update_url.txt") or _read_line(SYS + "/update_url.txt")
+    """URL of update.json: /switch/NXToolBox/update_url.txt overrides the bundled one."""
+    return _read_line(NXToolBox + "/update_url.txt") or _read_line(SYS + "/update_url.txt")
 
 
 def installed_version():

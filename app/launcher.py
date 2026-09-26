@@ -1,12 +1,12 @@
-"""nxtest start screen (launcher).
+"""NXToolBox start screen (launcher).
 
-Lives at /switch/nxtest/launcher.py and runs every time the app shows its start screen.
+Lives at /switch/NXToolBox/launcher.py and runs every time the app shows its start screen.
 It is plain Python, so it can be changed without rebuilding the app:
 
     python3 send.py upload app/launcher.py --to .
 
-The app ships a copy of this file and lib/ in nxtest.nro and installs them into
-/switch/nxtest/sys/. Files uploaded to /switch/nxtest/launcher.py or /switch/nxtest/lib/
+The app ships a copy of this file and lib/ in NXToolBox.nro and installs them into
+/switch/NXToolBox/sys/. Files uploaded to /switch/NXToolBox/launcher.py or /switch/NXToolBox/lib/
 take priority, so quick patches still work. Uploading a new launcher.py (or lib/ui.py)
 restarts the launcher right away. Once per app start the launcher checks update_url.txt
 for a newer version of the bundled files and offers to install it.
@@ -26,8 +26,8 @@ import switch
 import nxapp
 import ui
 
-ROOT = "/switch/nxtest/scripts"
-VERSION_FILE = "/switch/nxtest/sys/VERSION"
+ROOT = "/switch/NXToolBox/scripts"
+VERSION_FILE = "/switch/NXToolBox/sys/VERSION"
 SELF_FILES = ("launcher.py", "lib/ui.py")    # uploading these restarts the launcher
 BATTERY_EVERY_MS = 5000
 
@@ -60,7 +60,7 @@ class Launcher:
         self.items = []
         self._battery_at = 0
 
-        scr = ui.Screen("nxtest",
+        scr = ui.Screen("NXToolBox",
                         hint="A: open / run   B: back   Y: refresh   X: delete   R: get scripts   +: exit",
                         on_back=self.back, on_key=self.key)
         self.scr = scr
@@ -154,8 +154,9 @@ class Launcher:
         self.busy("Checking for updates...")
         try:
             manifest = installer.check_update()
-        except Exception:
-            self.status.set_text("Update check failed (no network?)")
+        except Exception as e:
+            self.status.set_text(("Update check failed: %s" % e)[:52])
+            print("Update check failed:", e)            # full text in the log / send.py output
             return
         if not manifest:
             self.status.set_text("")
@@ -191,7 +192,7 @@ class Launcher:
 
     def back(self):
         if not self.folder:
-            self.status.set_text("Press + to exit nxtest")
+            self.status.set_text("Press + to exit NXToolBox")
             return
         parts = self.folder.split("/")
         child = parts[-1] + "/"
@@ -228,7 +229,7 @@ class Launcher:
             self.open_store()
             return True
         if down & switch.PLUS:
-            if ui.confirm("Exit nxtest?", title="Exit", yes="Exit", no="Stay"):
+            if ui.confirm("Exit NXToolBox?", title="Exit", yes="Exit", no="Stay"):
                 nxapp.quit()
                 self.scr.close()
             return True

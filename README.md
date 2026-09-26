@@ -1,4 +1,4 @@
-# nxtest
+# NXToolBox
 
 Run Python scripts on a Nintendo Switch (homebrew, embedded MicroPython) - from an
 on-console menu or from your computer over Wi-Fi, with live output like the Arduino
@@ -25,7 +25,7 @@ IDE serial monitor. Scripts can use the buttons, sticks, touch screen, rumble,
 ## Project layout
 
 ```
-nxtest/
+NXToolBox/
 ├── source/                 app sources (C, libnx)
 │   ├── main.c              menu, network server, script runner
 │   ├── mp_glue.c           script interruption glue for MicroPython
@@ -35,7 +35,7 @@ nxtest/
 │   ├── mpconfigport.h      MicroPython configuration
 │   └── micropython_embed.mk
 ├── modules/switch/         MicroPython C modules: switch, usbhost, gfx, nxapp, http
-├── app/launcher.py         the start screen (uploaded to /switch/nxtest/launcher.py)
+├── app/launcher.py         the start screen (uploaded to /switch/NXToolBox/launcher.py)
 ├── lib/                    Python libraries: ui, requests, installer, store, usbserial, usbhid
 ├── examples/               example and test scripts
 ├── arduino/serial_echo/    test sketch for USB-Serial
@@ -74,7 +74,7 @@ cp $DEVKITPRO/examples/switch/templates/application/Makefile .
 ```
 
 ```make
-TARGET   := nxtest
+TARGET   := NXToolBox
 SOURCES  := source modules/switch micropython_embed/py micropython_embed/extmod micropython_embed/shared/runtime micropython_embed/port
 INCLUDES := source modules/switch micropython_embed
 LIBS     := -lcurl -lz -lnx -lm
@@ -98,45 +98,45 @@ bundle:
 
 ```
 ./gen.sh                  # after cloning, after changing modules/ or source/mpconfigport.h
-make clean && make        # produces nxtest.nro
+make clean && make        # produces NXToolBox.nro
 ```
 
 If you only changed `source/*.c`, plain `make` is enough.
 
-Copy `nxtest.nro` to `/switch/` on the SD card and start it from the homebrew menu
+Copy `NXToolBox.nro` to `/switch/` on the SD card and start it from the homebrew menu
 (preferably by holding R while launching a game, which gives the app more memory).
 
 ## Using it
 
 On the first start the app creates a password, shows it on the screen and saves it to
-`/switch/nxtest/password.txt`. Set up the computer once:
+`/switch/NXToolBox/password.txt`. Set up the computer once:
 
 ```
 # macOS / Linux (~/.zshrc or ~/.bashrc)
-export NXTEST_HOST=192.168.1.42
-export NXTEST_PASSWORD=yourpassword
+export NXToolBox_HOST=192.168.1.42
+export NXToolBox_PASSWORD=yourpassword
 
 # Windows
-setx NXTEST_HOST 192.168.1.42
-setx NXTEST_PASSWORD yourpassword
+setx NXToolBox_HOST 192.168.1.42
+setx NXToolBox_PASSWORD yourpassword
 ```
 
 The start screen (`app/launcher.py`) and the libraries (`lib/*.py`) are packed into
-`nxtest.nro` and installed into `/switch/nxtest/sys/` automatically. Files you upload to
-`/switch/nxtest/launcher.py` or `/switch/nxtest/lib/` take priority over them (quick
+`NXToolBox.nro` and installed into `/switch/NXToolBox/sys/` automatically. Files you upload to
+`/switch/NXToolBox/launcher.py` or `/switch/NXToolBox/lib/` take priority over them (quick
 patches without rebuilding); delete them to go back to the bundled versions.
 
 HTTPS certificates are checked against the console's certificate store. A
-`/switch/nxtest/cacert.pem`, if present, is used as well (e.g. for a private CA);
+`/switch/NXToolBox/cacert.pem`, if present, is used as well (e.g. for a private CA);
 `verify=False` disables the check.
 
 Then (use `py` instead of `python3` on Windows):
 
 ```
 python3 send.py run examples/hwtest.py            # run and watch the output
-python3 send.py upload game.py                    # -> /switch/nxtest/scripts (menu)
+python3 send.py upload game.py                    # -> /switch/NXToolBox/scripts (menu)
 python3 send.py upload mylib --to lib             # modules for import
-python3 send.py upload config.json --to .         # -> /switch/nxtest
+python3 send.py upload config.json --to .         # -> /switch/NXToolBox
 python3 send.py upload lib/ui.py lib/usbserial.py lib/usbhid.py --to lib
 ```
 
@@ -155,7 +155,7 @@ python3 send.py upload lib/ui.py lib/usbserial.py lib/usbhid.py --to lib
 
 ### Start screen (launcher)
 
-The start screen is `/switch/nxtest/launcher.py`, an ordinary script built with `lib/ui.py`
+The start screen is `/switch/NXToolBox/launcher.py`, an ordinary script built with `lib/ui.py`
 that talks to the app through the `nxapp` module (see `stubs/nxapp.pyi`). To change it,
 edit `app/launcher.py` and upload it with `--to .`: the running launcher reloads itself
 when `launcher.py` or `lib/ui.py` is uploaded.
@@ -167,7 +167,7 @@ app to skip the launcher. `+` and `-` together also stop the launcher.
 ### SD card layout
 
 ```
-/switch/nxtest/
+/switch/NXToolBox/
 ├── sys/           bundled launcher.py, lib/ and VERSION (managed by the app)
 ├── launcher.py    optional: your start screen, overrides sys/launcher.py
 ├── lib/           your modules (override sys/lib)
@@ -281,7 +281,7 @@ Press R on the start screen (or the "Get scripts..." button):
   Build one with `tools/make_catalog.py` (see the comment at the top of that file) and host it
   on GitHub (`https://raw.githubusercontent.com/OWNER/REPO/main/index.json`) or locally
   (`python3 -m http.server 8000` in the catalog folder). Catalogs are stored in
-  `/switch/nxtest/catalogs.txt` ("Name | URL" per line).
+  `/switch/NXToolBox/catalogs.txt` ("Name | URL" per line).
 
 The system keyboard may be unavailable when the homebrew menu is started from the Album;
 start it by holding R while launching a game.
@@ -325,7 +325,7 @@ mark `stubs/` as a Sources Root.
 
 ## Safety notes
 
-- Uploads are limited to `/switch/nxtest/`; paths with `..` are rejected.
+- Uploads are limited to `/switch/NXToolBox/`; paths with `..` are rejected.
 - Scripts can access the whole SD card. Do not write to `atmosphere/`, `emuMMC/` or `Nintendo/`.
 - The password protects against running code, but scripts and output are not encrypted.
 

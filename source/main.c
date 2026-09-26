@@ -1,12 +1,12 @@
-// nxtest - runs Python scripts on the Switch: from an on-console menu or over the network.
+// NXToolBox - runs Python scripts on the Switch: from an on-console menu or over the network.
 //
 // Start screen: launcher.py, a Python script (VIEW_LAUNCHER) that picks what to run through
 // the nxapp module. If it is missing or fails (or - is held at startup), the built-in text
 // menu is used instead (VIEW_MENU). Script output is shown in VIEW_LOG.
 //
 // Bundled files: launcher.py and lib/ are packed into the .nro (RomFS, see tools/bundle.py)
-// and copied to /switch/nxtest/sys/ when the bundled version is newer than the installed
-// one. /switch/nxtest/launcher.py and /switch/nxtest/lib/ override them (quick patches).
+// and copied to /switch/NXToolBox/sys/ when the bundled version is newer than the installed
+// one. /switch/NXToolBox/launcher.py and /switch/NXToolBox/lib/ override them (quick patches).
 //
 // Protocol (version 2), all numbers are big-endian:
 //   1. Switch -> client: "NXPY" + version byte + 16 random bytes (nonce)
@@ -14,7 +14,7 @@
 //   3. Command 'R' (run):    4-byte length + script text.
 //        The Switch runs the script, streams its output and closes the connection.
 //        If the client closes its side (shutdown SHUT_WR), the script gets KeyboardInterrupt.
-//      Command 'U' (upload): 2-byte path length + path (UTF-8, relative to /switch/nxtest,
+//      Command 'U' (upload): 2-byte path length + path (UTF-8, relative to /switch/NXToolBox,
 //        '/' separator) + 4-byte size + file contents.
 //        The Switch replies "ok <size>" or "error: ..." and closes the connection.
 
@@ -44,13 +44,13 @@
 #define MAX_SCRIPT    (512 * 1024)
 #define HEAP_SIZE     (4 * 1024 * 1024)
 
-#define CONFIG_DIR    "sdmc:/switch/nxtest"
+#define CONFIG_DIR    "sdmc:/switch/NXToolBox"
 #define PASSWORD_FILE CONFIG_DIR "/password.txt"
 #define SCRIPTS_DIR   CONFIG_DIR "/scripts"      // scripts shown in the menu
 #define LAUNCHER_FILE CONFIG_DIR "/launcher.py"  // user's start screen (overrides the bundled one)
 #define SYS_DIR       CONFIG_DIR "/sys"          // bundled files installed from RomFS
 #define SYS_LAUNCHER  SYS_DIR "/launcher.py"     // bundled start screen
-#define PY_NXTEST     "/switch/nxtest"           // CONFIG_DIR as Python sees it
+#define PY_NXToolBox     "/switch/NXToolBox"           // CONFIG_DIR as Python sees it
 #define MAX_PASSWORD  128
 
 #define PROTO_MAGIC   "NXPY"
@@ -240,7 +240,7 @@ bool app_poll_stop() {
 
 // Runs before every script: mounts the SD card as "/",
 // makes the script's folder the working directory and adds import paths
-// (the script's folder, /switch/nxtest/lib, then the bundled /switch/nxtest/sys/lib).
+// (the script's folder, /switch/NXToolBox/lib, then the bundled /switch/NXToolBox/sys/lib).
 // Helper names are deleted afterwards.
 static constexpr char SETUP_FMT[] =
     "try:\n"
@@ -251,12 +251,12 @@ static constexpr char SETUP_FMT[] =
     "del vfs\n"
     "import os, sys\n"
     "os.chdir('%s')\n"
-    "for _p in ('', '%s', '/switch/nxtest/lib', '/switch/nxtest/sys/lib'):\n"
+    "for _p in ('', '%s', '/switch/NXToolBox/lib', '/switch/NXToolBox/sys/lib'):\n"
     "    if _p not in sys.path:\n"
     "        sys.path.append(_p)\n"
     "del os, sys, _p\n";
 
-// workdir is a path as the Python script sees it, e.g. "/switch/nxtest/scripts/games"
+// workdir is a path as the Python script sees it, e.g. "/switch/NXToolBox/scripts/games"
 static void run_script(const char *code, const char *workdir) {
     // The path is inserted into a quoted Python string, so escape \ and '
     static char esc[2 * 1024];
@@ -290,7 +290,7 @@ static void run_script(const char *code, const char *workdir) {
 
 #define MAX_FILES     512
 #define MAX_NAME      256
-#define PY_SCRIPTS    "/switch/nxtest/scripts"   // the same folder as Python sees it
+#define PY_SCRIPTS    "/switch/NXToolBox/scripts"   // the same folder as Python sees it
 
 enum { VIEW_MENU, VIEW_LOG, VIEW_LAUNCHER };
 static int  g_view = VIEW_MENU;
@@ -434,7 +434,7 @@ static void draw_menu() {
     if (g_cursor >= g_scroll + LIST_ROWS) g_scroll = g_cursor - LIST_ROWS + 1;
 
     screen_clear();
-    printf("\x1b[36mnxtest\x1b[0m   %s\n", g_net_line);
+    printf("\x1b[36mNXToolBox\x1b[0m   %s\n", g_net_line);
     printf("Password: %s\n", g_password);
     printf("scripts/%.60s%s  (%d)\n", g_cur_dir, g_cur_dir[0] ? "/" : "", g_entry_count);
     printf("-------------------------------------------------------------------------------\n");
@@ -551,7 +551,7 @@ static char *read_file(const char *path, const char *name_for_errors) {
     return code;
 }
 
-// Runs a script file. py_path is the path as Python sees it ("/switch/nxtest/...").
+// Runs a script file. py_path is the path as Python sees it ("/switch/NXToolBox/...").
 // The script's folder becomes its working directory.
 static void run_file(const char *py_path) {
     char path[MAX_PATH_LEN + 80];
@@ -584,7 +584,7 @@ static void run_selected() {
 
 // ---------- file upload ----------
 
-// Only relative paths inside /switch/nxtest are allowed: no "..", ".", "//",
+// Only relative paths inside /switch/NXToolBox are allowed: no "..", ".", "//",
 // no leading or trailing '/', no ':' and no '\\'.
 static bool safe_relpath(const char *p) {
     const size_t len = strlen(p);
@@ -632,7 +632,7 @@ static void handle_upload(const int client) {
     const uint32_t size = ntohl(size_be);
 
     if (!safe_relpath(rel)) {
-        send_str(client, "error: path must be relative to /switch/nxtest and must not contain '..'\n");
+        send_str(client, "error: path must be relative to /switch/NXToolBox and must not contain '..'\n");
         return;
     }
     if (size > MAX_UPLOAD) {
@@ -825,7 +825,7 @@ int app_port() { return PORT; }
 // ReSharper disable once CppUseInternalLinkage
 const char *app_password() { return g_password; }
 
-// ---------- bundled files (RomFS -> /switch/nxtest/sys) ----------
+// ---------- bundled files (RomFS -> /switch/NXToolBox/sys) ----------
 
 // First line of a text file without the line break ("" if there is no file)
 static void read_line(const char *path, char *out, const size_t size) {
@@ -960,7 +960,7 @@ static bool run_launcher() {
     g_client_eof = false;
     g_combo_was_held = true;
     hw_script_begin();
-    run_script(code, PY_NXTEST);
+    run_script(code, PY_NXToolBox);
     hw_script_end();
     free(code);
 
@@ -1086,7 +1086,7 @@ int main() {
                     g_view = VIEW_LAUNCHER;
                     continue;
                 }
-                note_event("No launcher.py (neither bundled nor in /switch/nxtest)");
+                note_event("No launcher.py (neither bundled nor in /switch/NXToolBox)");
             }
         } else {  // VIEW_LOG
             if (down & HidNpadButton_B) {

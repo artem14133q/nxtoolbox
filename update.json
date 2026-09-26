@@ -1,0 +1,12 @@
+{
+  "version": "20260926224619",
+  "files": {
+    "launcher.py": "app/launcher.py",
+    "lib/installer.py": "lib/installer.py",
+    "lib/requests.py": "lib/requests.py",
+    "lib/store.py": "lib/store.py",
+    "lib/ui.py": "lib/ui.py",
+    "lib/usbhid.py": "lib/usbhid.py",
+    "lib/usbserial.py": "lib/usbserial.py"
+  }
+}

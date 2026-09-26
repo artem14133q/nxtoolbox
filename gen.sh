@@ -35,7 +35,7 @@ CEOF
 
 echo "== Adding filesystem (VFS) sources =="
 mkdir -p "$ROOT/micropython_embed/extmod"
-for f in vfs.c vfs_posix.c vfs_posix_file.c vfs_reader.c modos.c; do
+for f in vfs.c vfs_posix.c vfs_posix_file.c vfs_reader.c modos.c modjson.c; do
     cp "$MPY/extmod/$f" "$ROOT/micropython_embed/extmod/"
 done
 cp "$MPY"/extmod/*.h "$ROOT/micropython_embed/extmod/"

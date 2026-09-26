@@ -1,4 +1,4 @@
-"""IDE hints: the `switch` module from nxtest (implemented in C, runs only on the Switch).
+"""IDE hints: the `switch` module from NXToolBox (implemented in C, runs only on the Switch).
 
 This file is never executed; it only helps the editor (CLion, PyCharm, VS Code)
 understand `import switch` and show completion and documentation.

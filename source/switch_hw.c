@@ -149,3 +149,14 @@ void hw_rumble_stop() {
     }
     s_rumbling = false;
 }
+
+bool hw_keyboard(const char *initial, const char *hint, char *out, const size_t out_size) {
+    SwkbdConfig kbd;
+    if (R_FAILED(swkbdCreate(&kbd, 0))) return false;
+    swkbdConfigMakePresetDefault(&kbd);
+    if (initial && initial[0]) swkbdConfigSetInitialText(&kbd, initial);
+    if (hint && hint[0]) swkbdConfigSetGuideText(&kbd, hint);
+    const Result rc = swkbdShow(&kbd, out, out_size);
+    swkbdClose(&kbd);
+    return R_SUCCEEDED(rc);                     // fails when the user cancels
+}

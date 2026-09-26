@@ -32,3 +32,11 @@ void app_check_interrupt() {
 __attribute__((weak)) void mp_hal_set_interrupt_char(const int c) {
     (void)c;
 }
+
+// For code that must not raise (e.g. inside libcurl callbacks in http_hw.c): returns true
+// if the script should stop. The KeyboardInterrupt stays pending and is raised later.
+// ReSharper disable once CppUseInternalLinkage
+bool app_stop_requested() {
+    app_vm_hook();
+    return MP_STATE_THREAD(mp_pending_exception) != MP_OBJ_NULL;
+}

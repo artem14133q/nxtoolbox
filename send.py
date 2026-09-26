@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""nxtest - run Python scripts and upload files to a Nintendo Switch.
+"""NXToolBox - run Python scripts and upload files to a Nintendo Switch.
 
 Works on Windows, macOS and Linux. Requires Python 3.8+, no third-party packages.
 
 Commands:
     send.py run SCRIPT.py                     run a script and show its output
     send.py upload FILE_OR_FOLDER ... [--to FOLDER]
-                                              upload to /switch/nxtest/scripts
-                                              (--to lib for modules, --to . for /switch/nxtest itself)
+                                              upload to /switch/NXToolBox/scripts
+                                              (--to lib for modules, --to . for /switch/NXToolBox itself)
 
 Connection (can be omitted if the environment variables are set):
-    -H/--host  Switch IP address     or NXTEST_HOST
-    -p/--password  password          or NXTEST_PASSWORD
+    -H/--host  Switch IP address     or NXTOOLBOX_HOST
+    -p/--password  password          or NXTOOLBOX_PASSWORD
 
 Ctrl+C during run stops the script on the Switch; a second Ctrl+C exits immediately.
 """
@@ -69,11 +69,11 @@ def connect(host, password, cmd):
         sock = socket.create_connection((host, PORT), timeout=5)
     except OSError as e:
         raise NxError(f"cannot connect to {host}:{PORT} ({e}). "
-                      "Is nxtest running on the Switch? Is it on the same network?")
+                      "Is NXToolBox running on the Switch? Is it on the same network?")
     try:
         hello = recv_exact(sock, 5 + NONCE_SIZE)
         if hello[:4] != MAGIC:
-            raise NxError("something other than nxtest is answering at this address")
+            raise NxError("something other than NXToolBox is answering at this address")
         if hello[4] != VERSION:
             raise NxError(f"protocol version mismatch: Switch has {hello[4]}, send.py has {VERSION}. "
                           "Update the app on the Switch or send.py")
@@ -156,7 +156,7 @@ def normalize_remote_dir(to):
         return PurePosixPath()
     parts = [p for p in to.replace("\\", "/").split("/") if p not in ("", ".")]
     if any(p == ".." or ":" in p for p in parts):
-        raise NxError(f"--to must be a path inside /switch/nxtest without '..': {to}")
+        raise NxError(f"--to must be a path inside /switch/NXToolBox without '..': {to}")
     return PurePosixPath(*parts)
 
 
@@ -216,7 +216,7 @@ def cmd_upload(args):
     for local, remote in files:
         ok, info = upload_one(args, local, remote)
         mark = "ok   " if ok else "ERROR"
-        print(f"  {mark} /switch/nxtest/{remote}  ({info})")
+        print(f"  {mark} /switch/NXToolBox/{remote}  ({info})")
         if not ok:
             failed += 1
 
@@ -230,13 +230,13 @@ def main():
     setup_console()
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("-H", "--host", default=os.environ.get("NXTEST_HOST"),
-                        help="Switch IP address (default: NXTEST_HOST)")
-    common.add_argument("-p", "--password", default=os.environ.get("NXTEST_PASSWORD"),
-                        help="password (default: NXTEST_PASSWORD)")
+    common.add_argument("-H", "--host", default=os.environ.get("NXTOOLBOX_HOST"),
+                        help="Switch IP address (default: NXTOOLBOX_HOST)")
+    common.add_argument("-p", "--password", default=os.environ.get("NXTOOLBOX_PASSWORD"),
+                        help="password (default: NXTOOLBOX_PASSWORD)")
 
     parser = argparse.ArgumentParser(
-        description="Run scripts and upload files to a Nintendo Switch (nxtest)")
+        description="Run scripts and upload files to a Nintendo Switch (NXToolBox)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run", parents=[common], help="run a script")
@@ -246,15 +246,15 @@ def main():
     p_up = sub.add_parser("upload", parents=[common], help="upload files or folders")
     p_up.add_argument("paths", nargs="+", help="files and/or folders")
     p_up.add_argument("--to", default="scripts",
-                      help="folder inside /switch/nxtest: scripts (default, shown in the menu), "
-                           "lib (modules for import), . (/switch/nxtest itself)")
+                      help="folder inside /switch/NXToolBox: scripts (default, shown in the menu), "
+                           "lib (modules for import), . (/switch/NXToolBox itself)")
     p_up.set_defaults(func=cmd_upload)
 
     args = parser.parse_args()
     if not args.host:
-        parser.error("Switch address required: -H IP or the NXTEST_HOST environment variable")
+        parser.error("Switch address required: -H IP or the NXTOOLBOX_HOST environment variable")
     if not args.password:
-        parser.error("password required: -p PASSWORD or the NXTEST_PASSWORD environment variable")
+        parser.error("password required: -p PASSWORD or the NXTOOLBOX_PASSWORD environment variable")
 
     return args.func(args)
 

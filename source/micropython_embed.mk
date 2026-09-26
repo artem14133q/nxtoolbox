@@ -6,6 +6,7 @@ PACKAGE_DIR = ../micropython_embed
 # root pointers on its own, so list them explicitly.
 SRC_QSTR += $(MICROPYTHON_TOP)/extmod/vfs.c $(MICROPYTHON_TOP)/extmod/vfs_posix.c \
             $(MICROPYTHON_TOP)/extmod/vfs_posix_file.c $(MICROPYTHON_TOP)/extmod/vfs_reader.c \
-            $(MICROPYTHON_TOP)/extmod/modos.c
+            $(MICROPYTHON_TOP)/extmod/modos.c \
+            $(MICROPYTHON_TOP)/extmod/modjson.c
 
 include $(MICROPYTHON_TOP)/ports/embed/embed.mk

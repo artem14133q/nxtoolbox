@@ -6,7 +6,7 @@
 // Sleep in 20 ms slices so it can be interrupted (+ and -, Ctrl+C, HOME)
 static void sleep_interruptible(mp_int_t ms) {
     while (ms > 0) {
-        mp_int_t step = ms > 20 ? 20 : ms;
+        const mp_int_t step = ms > 20 ? 20 : ms;
         hw_sleep_ms((uint32_t)step);
         ms -= step;
         app_check_interrupt();
@@ -17,7 +17,7 @@ static void sleep_interruptible(mp_int_t ms) {
 
 // switch.battery() -> int
 static mp_obj_t mod_battery() {
-    int pct = hw_battery();
+    const int pct = hw_battery();
     if (pct < 0) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("battery info unavailable"));
     }
@@ -26,6 +26,7 @@ static mp_obj_t mod_battery() {
 static MP_DEFINE_CONST_FUN_OBJ_0(mod_battery_obj, mod_battery);
 
 // switch.sleep_ms(ms)
+// ReSharper disable once CppParameterMayBeConst
 static mp_obj_t mod_sleep_ms(mp_obj_t ms_in) {
     sleep_interruptible(mp_obj_get_int(ms_in));
     return mp_const_none;
@@ -97,7 +98,7 @@ static MP_DEFINE_CONST_FUN_OBJ_0(mod_touches_obj, mod_touches);
 //   ms   - if > 0: vibrate for this many milliseconds, then stop;
 //          if 0: vibrate until rumble(0) is called
 //   low, high - frequencies of the low and high bands in Hz
-static mp_obj_t mod_rumble(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+static mp_obj_t mod_rumble(const size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     enum { ARG_amp, ARG_ms, ARG_low, ARG_high };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_amp,  MP_ARG_REQUIRED | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
@@ -108,10 +109,10 @@ static mp_obj_t mod_rumble(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    float amp  = (float)mp_obj_get_float(args[ARG_amp].u_obj);
-    float low  = args[ARG_low].u_obj  == MP_OBJ_NULL ? 160.0f : (float)mp_obj_get_float(args[ARG_low].u_obj);
-    float high = args[ARG_high].u_obj == MP_OBJ_NULL ? 320.0f : (float)mp_obj_get_float(args[ARG_high].u_obj);
-    mp_int_t ms = args[ARG_ms].u_int;
+    const float amp  = (float)mp_obj_get_float(args[ARG_amp].u_obj);
+    const float low  = args[ARG_low].u_obj  == MP_OBJ_NULL ? 160.0f : (float)mp_obj_get_float(args[ARG_low].u_obj);
+    const float high = args[ARG_high].u_obj == MP_OBJ_NULL ? 320.0f : (float)mp_obj_get_float(args[ARG_high].u_obj);
+    const mp_int_t ms = args[ARG_ms].u_int;
 
     if (amp <= 0.0f) {
         hw_rumble_stop();
@@ -135,36 +136,48 @@ static mp_obj_t mod_rumble(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(mod_rumble_obj, 1, mod_rumble);
 
+
+// switch.keyboard(text="", hint="") -> str, or None if cancelled
+static mp_obj_t mod_keyboard(const size_t n_args, const mp_obj_t *args) {
+    const char *initial = n_args > 0 ? mp_obj_str_get_str(args[0]) : "";
+    const char *hint = n_args > 1 ? mp_obj_str_get_str(args[1]) : "";
+    static char out[1024];
+    if (!hw_keyboard(initial, hint, out, sizeof(out))) return mp_const_none;
+    return mp_obj_new_str(out, strlen(out));
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_keyboard_obj, 0, 2, mod_keyboard);
+
 // ---------- module table ----------
 
 static const mp_rom_map_elem_t switch_module_globals_table[] = {
-    { MP_ROM_QSTR(MP_QSTR___name__),     MP_ROM_QSTR(MP_QSTR_switch) },
-    { MP_ROM_QSTR(MP_QSTR_battery),      MP_ROM_PTR(&mod_battery_obj) },
-    { MP_ROM_QSTR(MP_QSTR_sleep_ms),     MP_ROM_PTR(&mod_sleep_ms_obj) },
-    { MP_ROM_QSTR(MP_QSTR_running),      MP_ROM_PTR(&mod_running_obj) },
-    { MP_ROM_QSTR(MP_QSTR_ticks_ms),     MP_ROM_PTR(&mod_ticks_ms_obj) },
-    { MP_ROM_QSTR(MP_QSTR_buttons),      MP_ROM_PTR(&mod_buttons_obj) },
-    { MP_ROM_QSTR(MP_QSTR_buttons_down), MP_ROM_PTR(&mod_buttons_down_obj) },
-    { MP_ROM_QSTR(MP_QSTR_stick),        MP_ROM_PTR(&mod_stick_obj) },
-    { MP_ROM_QSTR(MP_QSTR_touches),      MP_ROM_PTR(&mod_touches_obj) },
-    { MP_ROM_QSTR(MP_QSTR_rumble),       MP_ROM_PTR(&mod_rumble_obj) },
+    {.key = MP_ROM_QSTR(MP_QSTR___name__), .value = MP_ROM_QSTR(MP_QSTR_switch)},
+    {.key = MP_ROM_QSTR(MP_QSTR_battery), .value = MP_ROM_PTR(&mod_battery_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_sleep_ms), .value = MP_ROM_PTR(&mod_sleep_ms_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_running), .value = MP_ROM_PTR(&mod_running_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_ticks_ms), .value = MP_ROM_PTR(&mod_ticks_ms_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_buttons), .value = MP_ROM_PTR(&mod_buttons_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_buttons_down), .value = MP_ROM_PTR(&mod_buttons_down_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_stick), .value = MP_ROM_PTR(&mod_stick_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_touches), .value = MP_ROM_PTR(&mod_touches_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_rumble), .value = MP_ROM_PTR(&mod_rumble_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_keyboard), .value = MP_ROM_PTR(&mod_keyboard_obj)},
 
-    { MP_ROM_QSTR(MP_QSTR_A),      MP_ROM_INT(HW_BTN_A) },
-    { MP_ROM_QSTR(MP_QSTR_B),      MP_ROM_INT(HW_BTN_B) },
-    { MP_ROM_QSTR(MP_QSTR_X),      MP_ROM_INT(HW_BTN_X) },
-    { MP_ROM_QSTR(MP_QSTR_Y),      MP_ROM_INT(HW_BTN_Y) },
-    { MP_ROM_QSTR(MP_QSTR_L),      MP_ROM_INT(HW_BTN_L) },
-    { MP_ROM_QSTR(MP_QSTR_R),      MP_ROM_INT(HW_BTN_R) },
-    { MP_ROM_QSTR(MP_QSTR_ZL),     MP_ROM_INT(HW_BTN_ZL) },
-    { MP_ROM_QSTR(MP_QSTR_ZR),     MP_ROM_INT(HW_BTN_ZR) },
-    { MP_ROM_QSTR(MP_QSTR_PLUS),   MP_ROM_INT(HW_BTN_PLUS) },
-    { MP_ROM_QSTR(MP_QSTR_MINUS),  MP_ROM_INT(HW_BTN_MINUS) },
-    { MP_ROM_QSTR(MP_QSTR_UP),     MP_ROM_INT(HW_BTN_UP) },
-    { MP_ROM_QSTR(MP_QSTR_DOWN),   MP_ROM_INT(HW_BTN_DOWN) },
-    { MP_ROM_QSTR(MP_QSTR_LEFT),   MP_ROM_INT(HW_BTN_LEFT) },
-    { MP_ROM_QSTR(MP_QSTR_RIGHT),  MP_ROM_INT(HW_BTN_RIGHT) },
-    { MP_ROM_QSTR(MP_QSTR_LSTICK), MP_ROM_INT(HW_BTN_LSTICK) },   // stick click
-    { MP_ROM_QSTR(MP_QSTR_RSTICK), MP_ROM_INT(HW_BTN_RSTICK) },
+    {.key = MP_ROM_QSTR(MP_QSTR_A), .value = MP_ROM_INT(HW_BTN_A)},
+    {.key = MP_ROM_QSTR(MP_QSTR_B), .value = MP_ROM_INT(HW_BTN_B)},
+    {.key = MP_ROM_QSTR(MP_QSTR_X), .value = MP_ROM_INT(HW_BTN_X)},
+    {.key = MP_ROM_QSTR(MP_QSTR_Y), .value = MP_ROM_INT(HW_BTN_Y)},
+    {.key = MP_ROM_QSTR(MP_QSTR_L), .value = MP_ROM_INT(HW_BTN_L)},
+    {.key = MP_ROM_QSTR(MP_QSTR_R), .value = MP_ROM_INT(HW_BTN_R)},
+    {.key = MP_ROM_QSTR(MP_QSTR_ZL), .value = MP_ROM_INT(HW_BTN_ZL)},
+    {.key = MP_ROM_QSTR(MP_QSTR_ZR), .value = MP_ROM_INT(HW_BTN_ZR)},
+    {.key = MP_ROM_QSTR(MP_QSTR_PLUS), .value = MP_ROM_INT(HW_BTN_PLUS)},
+    {.key = MP_ROM_QSTR(MP_QSTR_MINUS), .value = MP_ROM_INT(HW_BTN_MINUS)},
+    {.key = MP_ROM_QSTR(MP_QSTR_UP), .value = MP_ROM_INT(HW_BTN_UP)},
+    {.key = MP_ROM_QSTR(MP_QSTR_DOWN), .value = MP_ROM_INT(HW_BTN_DOWN)},
+    {.key = MP_ROM_QSTR(MP_QSTR_LEFT), .value = MP_ROM_INT(HW_BTN_LEFT)},
+    {.key = MP_ROM_QSTR(MP_QSTR_RIGHT), .value = MP_ROM_INT(HW_BTN_RIGHT)},
+    {.key = MP_ROM_QSTR(MP_QSTR_LSTICK), .value = MP_ROM_INT(HW_BTN_LSTICK)},   // stick click
+    {.key = MP_ROM_QSTR(MP_QSTR_RSTICK), .value = MP_ROM_INT(HW_BTN_RSTICK)},
 };
 static MP_DEFINE_CONST_DICT(switch_module_globals, switch_module_globals_table);
 

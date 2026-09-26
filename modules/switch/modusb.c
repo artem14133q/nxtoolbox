@@ -28,7 +28,7 @@ static void raise_usb(int err) {
     mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("usb: %s"), msg);
 }
 
-static int check(int r) {
+static int check(const int r) {
     if (r < 0) raise_usb(r);
     return r;
 }
@@ -40,9 +40,9 @@ static mp_obj_t new_small(mp_int_t v) {
 // usbhost.devices() -> [dict, ...]
 // Keys: id, vid, pid, bus, dev, path, iface, cls, subcls, proto,
 //       eps - list of (address, type, packet size); type: 2 bulk, 3 interrupt
-static mp_obj_t mod_devices(void) {
+static mp_obj_t mod_devices() {
     int n = check(usb_hw_list(s_list, USB_MAX_LIST));
-    mp_obj_t result = mp_obj_new_list(0, NULL);
+    mp_obj_t result = mp_obj_new_list(0, nullptr);
     for (int i = 0; i < n; i++) {
         usb_if_info_t *it = &s_list[i];
         mp_obj_t d = mp_obj_new_dict(11);
@@ -57,9 +57,10 @@ static mp_obj_t mod_devices(void) {
         mp_obj_dict_store(d, MP_OBJ_NEW_QSTR(MP_QSTR_subcls), new_small(it->subcls));
         mp_obj_dict_store(d, MP_OBJ_NEW_QSTR(MP_QSTR_proto),  new_small(it->proto));
 
-        mp_obj_t eps = mp_obj_new_list(0, NULL);
+        // ReSharper disable once CppLocalVariableMayBeConst
+        mp_obj_t eps = mp_obj_new_list(0, nullptr);
         for (int j = 0; j < it->n_eps; j++) {
-            mp_obj_t t[3] = {
+            const mp_obj_t t[3] = {
                 new_small(it->eps[j].addr),
                 new_small(it->eps[j].type),
                 new_small(it->eps[j].max_packet),
@@ -80,8 +81,9 @@ static mp_obj_t mod_open(mp_obj_t id_in) {
 static MP_DEFINE_CONST_FUN_OBJ_1(mod_open_obj, mod_open);
 
 // usbhost.close(handle)
+// ReSharper disable once CppParameterMayBeConst
 static mp_obj_t mod_close(mp_obj_t h_in) {
-    check(usb_hw_close(mp_obj_get_int(h_in)));
+    check(usb_hw_close((int)mp_obj_get_int(h_in)));
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mod_close_obj, mod_close);
@@ -90,33 +92,33 @@ static MP_DEFINE_CONST_FUN_OBJ_1(mod_close_obj, mod_close);
 //   IN  (bmRequestType & 0x80): the last argument is a length, returns bytes
 //   OUT: the last argument is bytes (b"" allowed), returns the number of bytes sent
 static mp_obj_t mod_ctrl(size_t n_args, const mp_obj_t *args) {
-    int h = mp_obj_get_int(args[0]);
-    uint8_t type = (uint8_t)mp_obj_get_int(args[1]);
-    uint8_t req = (uint8_t)mp_obj_get_int(args[2]);
-    uint16_t value = (uint16_t)mp_obj_get_int(args[3]);
-    uint16_t index = (uint16_t)mp_obj_get_int(args[4]);
+    const int h = (int)mp_obj_get_int(args[0]);
+    const uint8_t type = (uint8_t)mp_obj_get_int(args[1]);
+    const uint8_t req = (uint8_t)mp_obj_get_int(args[2]);
+    const uint16_t value = (uint16_t)mp_obj_get_int(args[3]);
+    const uint16_t index = (uint16_t)mp_obj_get_int(args[4]);
 
     if (type & 0x80) {
-        mp_int_t len = n_args > 5 ? mp_obj_get_int(args[5]) : 0;
+        const mp_int_t len = n_args > 5 ? mp_obj_get_int(args[5]) : 0;
         if (len < 0 || len > 0x1000) raise_usb(USB_ERR_TOO_BIG);
-        int n = check(usb_hw_ctrl(h, type, req, value, index, s_io_buf, (uint16_t)len));
+        const int n = check(usb_hw_ctrl(h, type, req, value, index, s_io_buf, (uint16_t)len));
         return mp_obj_new_bytes(s_io_buf, n);
-    } else {
-        mp_buffer_info_t bi = { .buf = NULL, .len = 0 };
-        if (n_args > 5) mp_get_buffer_raise(args[5], &bi, MP_BUFFER_READ);
-        if (bi.len > 0x1000) raise_usb(USB_ERR_TOO_BIG);
-        int n = check(usb_hw_ctrl(h, type, req, value, index, bi.buf, (uint16_t)bi.len));
-        return new_small(n);
     }
+
+    mp_buffer_info_t bi = { .buf = NULL, .len = 0 };
+    if (n_args > 5) mp_get_buffer_raise(args[5], &bi, MP_BUFFER_READ);
+    if (bi.len > 0x1000) raise_usb(USB_ERR_TOO_BIG);
+    int n = check(usb_hw_ctrl(h, type, req, value, index, bi.buf, (uint16_t)bi.len));
+    return new_small(n);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_ctrl_obj, 5, 6, mod_ctrl);
 
 // usbhost.read(handle, ep, size=512, timeout_ms=100) -> bytes, or None on timeout
 static mp_obj_t mod_read(size_t n_args, const mp_obj_t *args) {
-    int h = mp_obj_get_int(args[0]);
-    uint8_t ep = (uint8_t)mp_obj_get_int(args[1]);
-    mp_int_t size = n_args > 2 ? mp_obj_get_int(args[2]) : 512;
-    mp_int_t timeout = n_args > 3 ? mp_obj_get_int(args[3]) : 100;
+    const int h = (int)mp_obj_get_int(args[0]);
+    const uint8_t ep = (uint8_t)mp_obj_get_int(args[1]);
+    const mp_int_t size = n_args > 2 ? mp_obj_get_int(args[2]) : 512;
+    const mp_int_t timeout = n_args > 3 ? mp_obj_get_int(args[3]) : 100;
     if (size <= 0 || size > USB_MAX_XFER) raise_usb(USB_ERR_TOO_BIG);
 
     int n = usb_hw_read(h, ep, s_io_buf, (uint32_t)size,
@@ -129,11 +131,11 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_read_obj, 2, 4, mod_read);
 
 // usbhost.write(handle, ep, data, timeout_ms=1000) -> number of bytes sent
 static mp_obj_t mod_write(size_t n_args, const mp_obj_t *args) {
-    int h = mp_obj_get_int(args[0]);
-    uint8_t ep = (uint8_t)mp_obj_get_int(args[1]);
+    const int h = (int)mp_obj_get_int(args[0]);
+    const uint8_t ep = (uint8_t)mp_obj_get_int(args[1]);
     mp_buffer_info_t bi;
     mp_get_buffer_raise(args[2], &bi, MP_BUFFER_READ);
-    mp_int_t timeout = n_args > 3 ? mp_obj_get_int(args[3]) : 1000;
+    const mp_int_t timeout = n_args > 3 ? mp_obj_get_int(args[3]) : 1000;
     int n = check(usb_hw_write(h, ep, bi.buf, (uint32_t)bi.len,
                                timeout < 0 ? USB_WAIT_FOREVER : (uint32_t)timeout));
     return new_small(n);
@@ -155,7 +157,8 @@ static const mp_rom_map_elem_t usbhost_module_globals_table[] = {
 };
 static MP_DEFINE_CONST_DICT(usbhost_module_globals, usbhost_module_globals_table);
 
-const mp_obj_module_t usbhost_user_cmodule = {
+// ReSharper disable once CppUseInternalLinkage
+const mp_obj_module_t usbhost_user_cmodule = { // NOLINT(*-interfaces-global-init)
     .base = { &mp_type_module },
     .globals = (mp_obj_dict_t *)&usbhost_module_globals,
 };

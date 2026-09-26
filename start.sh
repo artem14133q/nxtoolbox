@@ -1,2 +1,2 @@
 ./build.sh
-nxlink -s nxtest.nro
+nxlink -s NXToolBox.nro

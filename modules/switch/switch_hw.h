@@ -53,3 +53,6 @@ void     hw_rumble_stop();
 // Defined in source/mp_glue.c: raises KeyboardInterrupt
 // if the user asked to stop the script
 void app_check_interrupt();
+
+// System keyboard. Returns true and fills out if the user confirmed the text.
+bool hw_keyboard(const char *initial, const char *hint, char *out, size_t out_size);

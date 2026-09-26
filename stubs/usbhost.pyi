@@ -1,4 +1,4 @@
-"""IDE hints: the built-in `usbhost` module from nxtest (runs only on the Switch).
+"""IDE hints: the built-in `usbhost` module from NXToolBox (runs only on the Switch).
 
 Low-level access to USB devices connected to the Switch.
 For everyday tasks lib/usbserial.py and lib/usbhid.py are more convenient.

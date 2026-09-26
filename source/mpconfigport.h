@@ -9,6 +9,7 @@
 #define MICROPY_ENABLE_COMPILER       (1)
 #define MICROPY_ENABLE_GC             (1)
 #define MICROPY_PY_GC                 (1)
+#define MICROPY_PY_JSON               (1)
 
 // float/double and arbitrary-precision integers
 #define MICROPY_FLOAT_IMPL            (MICROPY_FLOAT_IMPL_DOUBLE)

@@ -7,6 +7,7 @@
     "lib/store.py": "lib/store.py",
     "lib/ui.py": "lib/ui.py",
     "lib/usbhid.py": "lib/usbhid.py",
-    "lib/usbserial.py": "lib/usbserial.py"
+    "lib/usbserial.py": "lib/usbserial.py",
+    "cacert.pem": "cacert.pem"
   }
 }

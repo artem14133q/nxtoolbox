@@ -7,6 +7,8 @@ Creates:
     romfs/VERSION                       newest modification time of those files (UTC,
                                         YYYYMMDDHHMMSS), so a newer build has a larger version
     romfs/update_url.txt                copy of update_url.txt, if it exists
+    romfs/cacert.pem                    copy of cacert.pem, if it exists (trusted certificate
+                                        authorities for HTTPS: https://curl.se/docs/caextract.html)
     update.json                         manifest for online updates: commit and push it
 
 On the Switch the app copies romfs/ to /switch/NXToolBox/sys/ whenever the bundled VERSION
@@ -30,6 +32,8 @@ def sources():
     files = {"launcher.py": "app/launcher.py"}
     for f in sorted((ROOT / "lib").glob("*.py")):
         files["lib/" + f.name] = "lib/" + f.name
+    if (ROOT / "cacert.pem").is_file():
+        files["cacert.pem"] = "cacert.pem"
     return files
 
 
@@ -56,8 +60,13 @@ def main():
     new = json.dumps(manifest, indent=2) + "\n"
     if new != old:
         MANIFEST.write_text(new)
+    notes = []
+    if not UPDATE_URL.is_file():
+        notes.append("no update_url.txt: online updates off")
+    if "cacert.pem" not in files:
+        notes.append("no cacert.pem: HTTPS relies on the console's certificate store")
     print("bundle: version %s, %d files%s" % (version, len(files),
-                                              "" if UPDATE_URL.is_file() else " (no update_url.txt: online updates off)"))
+                                              "".join(" (%s)" % n for n in notes)))
 
 
 if __name__ == "__main__":

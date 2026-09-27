@@ -12,8 +12,20 @@
 // so it is safe inside libcurl callbacks; the KeyboardInterrupt stays pending.
 bool app_stop_requested();
 
-#define CA_FILE     "sdmc:/switch/NXToolBox/cacert.pem"
+// The app folder; must match CONFIG_DIR in main.c. Can also be set from the Makefile:
+// CFLAGS += -DAPP_DIR='"sdmc:/switch/NXToolBox"'
+#ifndef APP_DIR
+#define APP_DIR     "sdmc:/switch/NXToolBox"
+#endif
 #define USER_AGENT  "NXToolBox (Nintendo Switch; libcurl)"
+
+// Trusted certificate authorities (Mozilla list from https://curl.se/docs/caextract.html):
+// the user's copy first, then the one bundled in the .nro (see tools/bundle.py).
+// Without either, the console's own certificate store is used.
+static const char *const CA_FILES[] = {
+    APP_DIR "/cacert.pem",
+    APP_DIR "/sys/cacert.pem",
+};
 
 static bool s_initialized = false;
 static char s_error[CURL_ERROR_SIZE];
@@ -73,9 +85,12 @@ static int on_progress(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
 
 // ---------- common setup ----------
 
-static bool ca_available() {
-    struct stat st;
-    return stat(CA_FILE, &st) == 0;
+static const char *ca_file() {
+    for (size_t i = 0; i < sizeof(CA_FILES) / sizeof(CA_FILES[0]); i++) {
+        struct stat st;
+        if (stat(CA_FILES[i], &st) == 0 && S_ISREG(st.st_mode)) return CA_FILES[i];
+    }
+    return nullptr;
 }
 
 static CURL *make_handle(const char *url, const int timeout_s, const bool verify) {
@@ -94,9 +109,10 @@ static CURL *make_handle(const char *url, const int timeout_s, const bool verify
     curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, on_progress);
     if (verify) {
-        // devkitPro's libcurl uses the console's TLS service with the system certificate
-        // store; a cacert.pem, if present, is passed as well (e.g. for private CAs)
-        if (ca_available()) curl_easy_setopt(c, CURLOPT_CAINFO, CA_FILE);
+        // The console's certificate store may miss newer root CAs, so a cacert.pem is used
+        // when there is one
+        const char *ca = ca_file();
+        if (ca) curl_easy_setopt(c, CURLOPT_CAINFO, ca);
         curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 2L);
     } else {

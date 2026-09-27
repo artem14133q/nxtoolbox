@@ -230,13 +230,22 @@ def main():
     setup_console()
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("-H", "--host", default=os.environ.get("NXTOOLBOX_HOST"),
-                        help="Switch IP address (default: NXTOOLBOX_HOST)")
-    common.add_argument("-p", "--password", default=os.environ.get("NXTOOLBOX_PASSWORD"),
-                        help="password (default: NXTOOLBOX_PASSWORD)")
 
-    parser = argparse.ArgumentParser(
-        description="Run scripts and upload files to a Nintendo Switch (NXToolBox)")
+    common.add_argument(
+        "-H",
+        "--host",
+        default=os.environ.get("NXTOOLBOX_HOST"),
+        help="Switch IP address (default: NXTOOLBOX_HOST)"
+    )
+
+    common.add_argument(
+        "-p",
+        "--password",
+        default=os.environ.get("NXTOOLBOX_PASSWORD"),
+        help="password (default: NXTOOLBOX_PASSWORD)"
+    )
+
+    parser = argparse.ArgumentParser(description="Run scripts and upload files to a Nintendo Switch (NXToolBox)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run", parents=[common], help="run a script")
@@ -245,9 +254,12 @@ def main():
 
     p_up = sub.add_parser("upload", parents=[common], help="upload files or folders")
     p_up.add_argument("paths", nargs="+", help="files and/or folders")
-    p_up.add_argument("--to", default="scripts",
-                      help="folder inside /switch/NXToolBox: scripts (default, shown in the menu), "
-                           "lib (modules for import), . (/switch/NXToolBox itself)")
+    p_up.add_argument(
+        "--to",
+        default="scripts",
+        help="folder inside /switch/NXToolBox: scripts (default, shown in the menu), "
+            "lib (modules for import), . (/switch/NXToolBox itself)"
+    )
     p_up.set_defaults(func=cmd_upload)
 
     args = parser.parse_args()

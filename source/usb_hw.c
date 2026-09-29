@@ -37,7 +37,13 @@ static UsbHsInterface s_query[USB_MAX_LIST];
 
 // ---------- initialization ----------
 
+// Initializing usb:hs (even without acquiring any interface) makes the system's own
+// keyboard/mouse HID support stop seeing devices behind a USB hub, so this is not called
+// eagerly at startup (see hw_init() in switch_hw.c) - only lazily, the first time a script
+// actually touches usbhost (query() below), so scripts that never use raw USB access do
+// not pay that cost.
 void usb_hw_init() {
+    if (s_ready) return;
     const Result rc = usbHsInitialize();
     s_ready = R_SUCCEEDED(rc);
     if (!s_ready) s_last_rc = rc;
@@ -57,6 +63,7 @@ uint32_t usb_hw_last_result() {
 // ---------- device list ----------
 
 static int query(s32 *total) {
+    usb_hw_init();
     if (!s_ready) return USB_ERR_NOT_READY;
     // An empty filter is rejected, so use "bcdDevice >= 0", which matches everything
     UsbHsInterfaceFilter f = {0};

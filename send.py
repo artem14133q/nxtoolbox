@@ -8,6 +8,14 @@ Commands:
     send.py upload FILE_OR_FOLDER ... [--to FOLDER]
                                               upload to /switch/NXToolBox/scripts
                                               (--to lib for modules, --to . for /switch/NXToolBox itself)
+    send.py screenshot [-o FILE.png]          save a PNG of whatever is on screen right now,
+                                              into screenshots/<timestamp>.png by default
+                                              (graphics mode must be active - it is whenever
+                                              the launcher or a script with a GUI is running)
+    send.py input button A [B ...] [--hold MS]     fake holding button(s), for automated tests
+    send.py input tap X Y [--hold MS]              fake a touch at (X, Y), 1280x720
+    send.py input swipe X0 Y0 X1 Y1 [--ms MS]      fake a drag from one point to another
+    send.py input release                          cancel any pending synthetic input
 
 Connection (can be omitted if the environment variables are set):
     -H/--host  Switch IP address     or NXTOOLBOX_HOST
@@ -23,6 +31,8 @@ import os
 import socket
 import struct
 import sys
+import time
+import zlib
 from pathlib import Path, PurePosixPath
 
 PORT = 5555
@@ -32,6 +42,16 @@ NONCE_SIZE = 16
 
 CMD_RUN = b"R"
 CMD_UPLOAD = b"U"
+CMD_SCREENSHOT = b"S"
+CMD_INPUT = b"I"
+
+# Matches switch.A / switch.B / ... on the console (modules/switch/switch_hw.h)
+BUTTON_BITS = {
+    "A": 1 << 0, "B": 1 << 1, "X": 1 << 2, "Y": 1 << 3,
+    "LSTICK": 1 << 4, "RSTICK": 1 << 5, "L": 1 << 6, "R": 1 << 7,
+    "ZL": 1 << 8, "ZR": 1 << 9, "PLUS": 1 << 10, "MINUS": 1 << 11,
+    "LEFT": 1 << 12, "UP": 1 << 13, "RIGHT": 1 << 14, "DOWN": 1 << 15,
+}
 
 CHUNK = 64 * 1024
 MAX_UPLOAD = 256 * 1024 * 1024
@@ -224,6 +244,114 @@ def cmd_upload(args):
     return 1 if failed else 0
 
 
+# ---------- screenshot ----------
+
+# Next to send.py itself, not the current directory: screenshots always land in the same
+# place in the project no matter where this is run from (gitignored - see .gitignore).
+SCREENSHOTS_DIR = Path(__file__).resolve().parent / "screenshots"
+
+
+def _screenshot_path():
+    SCREENSHOTS_DIR.mkdir(exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    path = SCREENSHOTS_DIR / f"{stamp}.png"
+    n = 1
+    while path.exists():           # more than one screenshot within the same second
+        n += 1
+        path = SCREENSHOTS_DIR / f"{stamp}-{n}.png"
+    return path
+
+
+def _png_chunk(tag, data):
+    return struct.pack(">I", len(data)) + tag + data + \
+        struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+
+def write_png(path, width, height, rgba):
+    """A minimal, valid PNG (8-bit RGBA, no filtering) from raw rgba bytes
+    (width * height * 4, row by row) - no third-party packages, just zlib."""
+    stride = width * 4
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)                            # filter type 0 (None) for this row
+        raw += rgba[y * stride:(y + 1) * stride]
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)   # 8 bpc, color type 6 = RGBA
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+        f.write(_png_chunk(b"IHDR", ihdr))
+        f.write(_png_chunk(b"IDAT", zlib.compress(bytes(raw), 6)))
+        f.write(_png_chunk(b"IEND", b""))
+
+
+def cmd_screenshot(args):
+    sock = connect(args.host, args.password, CMD_SCREENSHOT)
+    with sock:
+        sock.settimeout(15)
+        if recv_exact(sock, 1) != b"\x01":
+            raise NxError(read_all_text(sock) or "screenshot failed")
+        width, height = struct.unpack(">II", recv_exact(sock, 8))
+        size = width * height * 4
+        data = bytearray()
+        while len(data) < size:
+            chunk = sock.recv(min(CHUNK, size - len(data)))
+            if not chunk:
+                raise NxError("connection lost while receiving the screenshot")
+            data += chunk
+    path = Path(args.output) if args.output else _screenshot_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_png(str(path), width, height, bytes(data))
+    print(f"Saved {path} ({width}x{height})")
+    return 0
+
+
+# ---------- input (for automated testing) ----------
+# Applied over the app's own frame loop on the console, so this command returns as soon
+# as the Switch has set it up - it does not itself wait for hold/duration to elapse.
+# The settle sleep below is what actually waits, so a screenshot taken right after sees
+# the result rather than racing ahead of it.
+
+_SETTLE_MARGIN = 0.05   # seconds added on top of hold/duration - a few frames to settle
+
+
+def _send_input(args, payload):
+    sock = connect(args.host, args.password, CMD_INPUT)
+    with sock:
+        sock.settimeout(10)
+        sock.sendall(payload)
+        reply = read_all_text(sock)
+    if not reply.startswith("ok"):
+        raise NxError(reply or "no reply from the Switch")
+
+
+def cmd_input_button(args):
+    mask = 0
+    for name in args.buttons:
+        key = name.strip().upper()
+        if key not in BUTTON_BITS:
+            raise NxError(f"unknown button {name!r} (known: {', '.join(BUTTON_BITS)})")
+        mask |= BUTTON_BITS[key]
+    _send_input(args, bytes([0]) + struct.pack(">IH", mask, args.hold))
+    time.sleep(args.hold / 1000 + _SETTLE_MARGIN)
+    return 0
+
+
+def cmd_input_tap(args):
+    _send_input(args, bytes([1]) + struct.pack(">HHH", args.x, args.y, args.hold))
+    time.sleep(args.hold / 1000 + _SETTLE_MARGIN)
+    return 0
+
+
+def cmd_input_swipe(args):
+    _send_input(args, bytes([2]) + struct.pack(">HHHHH", args.x0, args.y0, args.x1, args.y1, args.ms))
+    time.sleep(args.ms / 1000 + _SETTLE_MARGIN)
+    return 0
+
+
+def cmd_input_release(args):
+    _send_input(args, bytes([3]))
+    return 0
+
+
 # ---------- main ----------
 
 def main():
@@ -261,6 +389,42 @@ def main():
             "lib (modules for import), . (/switch/NXToolBox itself)"
     )
     p_up.set_defaults(func=cmd_upload)
+
+    p_shot = sub.add_parser("screenshot", parents=[common], help="save a PNG of the current screen")
+    p_shot.add_argument("-o", "--output",
+                        help="output file (default: screenshots/<timestamp>.png next to send.py)")
+    p_shot.set_defaults(func=cmd_screenshot)
+
+    # -H/-p live only on the action subparsers below (button/tap/swipe/release), not here:
+    # argparse would otherwise apply each subparser's own default for the same dest and
+    # silently overwrite whatever was parsed at this level, if it were also defined here.
+    p_in = sub.add_parser("input", help="fake a button press or touch, for automated testing")
+    in_sub = p_in.add_subparsers(dest="action", required=True)
+
+    p_btn = in_sub.add_parser("button", parents=[common], help="hold one or more buttons")
+    p_btn.add_argument("buttons", nargs="+",
+                       help="A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, "
+                            "LSTICK, RSTICK")
+    p_btn.add_argument("--hold", type=int, default=120, help="milliseconds held (default: 120)")
+    p_btn.set_defaults(func=cmd_input_button)
+
+    p_tap = in_sub.add_parser("tap", parents=[common], help="touch one point (1280x720)")
+    p_tap.add_argument("x", type=int)
+    p_tap.add_argument("y", type=int)
+    p_tap.add_argument("--hold", type=int, default=80, help="milliseconds held (default: 80)")
+    p_tap.set_defaults(func=cmd_input_tap)
+
+    p_swipe = in_sub.add_parser("swipe", parents=[common], help="drag from one point to another")
+    p_swipe.add_argument("x0", type=int)
+    p_swipe.add_argument("y0", type=int)
+    p_swipe.add_argument("x1", type=int)
+    p_swipe.add_argument("y1", type=int)
+    p_swipe.add_argument("--ms", type=int, default=300, help="duration in milliseconds (default: 300)")
+    p_swipe.set_defaults(func=cmd_input_swipe)
+
+    p_rel = in_sub.add_parser("release", parents=[common],
+                              help="cancel any pending synthetic input right away")
+    p_rel.set_defaults(func=cmd_input_release)
 
     args = parser.parse_args()
     if not args.host:

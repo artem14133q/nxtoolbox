@@ -56,3 +56,20 @@ void app_check_interrupt();
 
 // System keyboard. Returns true and fills out if the user confirmed the text.
 bool hw_keyboard(const char *initial, const char *hint, char *out, size_t out_size);
+
+// ---------- synthetic input, for automated testing over the network (source/main.c) ----------
+// Non-blocking: these just record what to fake and for how long: hw_buttons_held/down()
+// and hw_touches() apply it on their own next call (and every one after, until it expires
+// on its own), so the app's normal per-frame loop plays it out - nothing here ever blocks
+// waiting for the hold/duration, which would freeze the whole app for that long.
+
+// ORs mask into the real buttons for hold_ms (clamped to a few seconds; see switch_hw.c).
+void hw_remote_press(uint32_t mask, uint32_t hold_ms);
+
+// A synthetic touch that linearly moves from (x0, y0) to (x1, y1) over duration_ms
+// (x0==x1 and y0==y1 for a tap/long-press in place); overrides any real touch meanwhile,
+// so tests stay deterministic even if a real finger is also on the screen.
+void hw_remote_touch(int x0, int y0, int x1, int y1, uint32_t duration_ms);
+
+// Cancels any pending synthetic button or touch immediately.
+void hw_remote_cancel();

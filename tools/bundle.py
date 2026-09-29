@@ -9,6 +9,9 @@ Creates:
     romfs/update_url.txt                copy of update_url.txt, if it exists
     romfs/cacert.pem                    copy of cacert.pem, if it exists (trusted certificate
                                         authorities for HTTPS: https://curl.se/docs/caextract.html)
+    romfs/themes/*.ini                  GUI themes from themes/ (installed to sys/themes)
+    romfs/fonts/*.ttf                   GUI fonts from fonts/ (installed to sys/fonts; not part
+                                        of online updates, they are large and rarely change)
     update.json                         manifest for online updates: commit and push it
 
 On the Switch the app copies romfs/ to /switch/NXToolBox/sys/ whenever the bundled VERSION
@@ -34,6 +37,8 @@ def sources():
         files["lib/" + f.name] = "lib/" + f.name
     if (ROOT / "cacert.pem").is_file():
         files["cacert.pem"] = "cacert.pem"
+    for f in sorted((ROOT / "themes").glob("*.ini")):
+        files["themes/" + f.name] = "themes/" + f.name
     return files
 
 
@@ -49,6 +54,12 @@ def main():
     if ROMFS.exists():
         shutil.rmtree(ROMFS)
     (ROMFS / "lib").mkdir(parents=True)
+    (ROMFS / "themes").mkdir()
+    fonts = sorted((ROOT / "fonts").glob("*.ttf"))
+    if fonts:
+        (ROMFS / "fonts").mkdir()
+        for f in fonts:
+            shutil.copy2(f, ROMFS / "fonts" / f.name)
     for dest, src in files.items():
         shutil.copy2(ROOT / src, ROMFS / dest)
     (ROMFS / "VERSION").write_text(version + "\n")
@@ -65,8 +76,10 @@ def main():
         notes.append("no update_url.txt: online updates off")
     if "cacert.pem" not in files:
         notes.append("no cacert.pem: HTTPS relies on the console's certificate store")
+    if not fonts:
+        notes.append("no fonts/*.ttf: the GUI uses the pixel font")
     print("bundle: version %s, %d files%s" % (version, len(files),
-                                              "".join(" (%s)" % n for n in notes)))
+          "".join(" (%s)" % n for n in notes)))
 
 
 if __name__ == "__main__":

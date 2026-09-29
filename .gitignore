@@ -1,3 +1,6 @@
+# send.py screenshot
+screenshots/
+
 # devkitPro build output
 build/
 *.nro
@@ -18,7 +21,10 @@ compile_commands.json
 # IDE and OS files
 .idea/
 .vscode/
+.aiassistant/
 .DS_Store
 Thumbs.db
 __pycache__/
 *.pyc
+
+.*

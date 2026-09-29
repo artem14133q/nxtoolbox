@@ -51,6 +51,43 @@ static void fill(const mp_int_t x, const mp_int_t y, const mp_int_t w, const mp_
     }
 }
 
+// Linear interpolation between two RGBA colors, t/max of the way from c0 to c1.
+static uint32_t lerp_color(const uint32_t c0, const uint32_t c1, const mp_int_t t, const mp_int_t max) {
+    if (max <= 0) return c0;
+    uint32_t out = 0;
+    for (int shift = 0; shift < 32; shift += 8) {
+        const int a = (int)((c0 >> shift) & 0xFF);
+        const int b = (int)((c1 >> shift) & 0xFF);
+        out |= (uint32_t)(a + (b - a) * t / max) << shift;
+    }
+    return out;
+}
+
+// One row's worth of precomputed colors for a horizontal gradient (avoids redoing the
+// lerp for every pixel of every row: computed once per fill_gradient() call).
+static uint32_t s_col_cache[GFX_WIDTH];
+
+static void fill_gradient(const mp_int_t x, const mp_int_t y, const mp_int_t w, const mp_int_t h,
+                          const uint32_t c0, const uint32_t c1, const bool vertical) {
+    if (w <= 0 || h <= 0) return;
+    const int x0 = clampi(x, 0, W), x1 = clampi(x + w, 0, W);
+    const int y0 = clampi(y, 0, H), y1 = clampi(y + h, 0, H);
+    if (x0 >= x1 || y0 >= y1) return;
+    if (vertical) {
+        for (int yy = y0; yy < y1; yy++) {
+            const uint32_t c = lerp_color(c0, c1, yy - y, h - 1);
+            uint32_t *row = s_buf + (uint32_t)yy * s_stride;
+            for (int xx = x0; xx < x1; xx++) row[xx] = c;
+        }
+        return;
+    }
+    for (int xx = x0; xx < x1; xx++) s_col_cache[xx - x0] = lerp_color(c0, c1, xx - x, w - 1);
+    for (int yy = y0; yy < y1; yy++) {
+        uint32_t *row = s_buf + (uint32_t)yy * s_stride;
+        memcpy(row + x0, s_col_cache, (size_t)(x1 - x0) * sizeof(uint32_t));
+    }
+}
+
 static void hline(mp_int_t x0, mp_int_t x1, mp_int_t y, uint32_t c) {
     if (x1 < x0) { const mp_int_t t = x0; x0 = x1; x1 = t; }
     fill(x0, y, x1 - x0 + 1, 1, c);
@@ -253,6 +290,18 @@ static mp_obj_t mod_fill_rect(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_fill_rect_obj, 5, 5, mod_fill_rect);
 
+// gfx.fill_gradient(x, y, w, h, color1, color2, vertical=True)
+// color1 -> color2 across the rectangle: top to bottom, or left to right.
+static mp_obj_t mod_fill_gradient(size_t n_args, const mp_obj_t *args) {
+    ensure();
+    const bool vertical = n_args > 6 ? mp_obj_is_true(args[6]) : true;
+    fill_gradient(mp_obj_get_int(args[0]), mp_obj_get_int(args[1]),
+                 mp_obj_get_int(args[2]), mp_obj_get_int(args[3]),
+                 get_color(args[4]), get_color(args[5]), vertical);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_fill_gradient_obj, 6, 7, mod_fill_gradient);
+
 // gfx.circle(x, y, r, color) - outline
 static mp_obj_t mod_circle(size_t n_args, const mp_obj_t *args) {
     ensure();
@@ -338,6 +387,7 @@ static const mp_rom_map_elem_t gfx_module_globals_table[] = {
     {.key = MP_ROM_QSTR(MP_QSTR_line), .value = MP_ROM_PTR(&mod_line_obj)},
     {.key = MP_ROM_QSTR(MP_QSTR_rect), .value = MP_ROM_PTR(&mod_rect_obj)},
     {.key = MP_ROM_QSTR(MP_QSTR_fill_rect), .value = MP_ROM_PTR(&mod_fill_rect_obj)},
+    {.key = MP_ROM_QSTR(MP_QSTR_fill_gradient), .value = MP_ROM_PTR(&mod_fill_gradient_obj)},
     {.key = MP_ROM_QSTR(MP_QSTR_circle), .value = MP_ROM_PTR(&mod_circle_obj)},
     {.key = MP_ROM_QSTR(MP_QSTR_fill_circle), .value = MP_ROM_PTR(&mod_fill_circle_obj)},
     {.key = MP_ROM_QSTR(MP_QSTR_text), .value = MP_ROM_PTR(&mod_text_obj)},

@@ -27,21 +27,73 @@ factor, or (if there are none) to expanding widgets: Slider and ProgressBar grow
 ListBox in width and height. widget.expanding() makes any widget grow.
 
 Only the widgets that changed are redrawn. Widgets must not overlap.
+
+Colors and corner rounding come from the theme (lib/theme.py, settings.ini). set_rounded(r)
+changes the corner radius at run time; box() draws a rounded, antialiased rectangle.
 """
 import switch
 import gfx
 
 # ---------- theme ----------
 
-BG = gfx.rgb(22, 26, 40)          # screen background
-BAR = gfx.rgb(38, 46, 72)         # title bar
-DIALOG = gfx.rgb(30, 35, 56)      # dialog background
-PANEL = gfx.rgb(45, 53, 80)       # widget background
-PANEL_HI = gfx.rgb(60, 70, 104)   # widget background when focused
-ACCENT = gfx.rgb(80, 150, 255)    # focus ring, slider fill, selection
-TEXT = gfx.WHITE
-MUTED = gfx.rgb(140, 148, 170)
-DISABLED = gfx.rgb(90, 96, 115)
+import theme as _theme
+
+THEME = _theme.current()
+
+
+def opaque(color):
+    """The color without transparency."""
+    return color | 0xFF000000
+
+
+def over(color, bg):
+    """The opaque color you see when color (with its alpha) is drawn over bg."""
+    a = (color >> 24) & 0xFF
+    if a == 255:
+        return color
+    out = 0xFF000000
+    for shift in (0, 8, 16):
+        c, b = (color >> shift) & 0xFF, (bg >> shift) & 0xFF
+        out |= ((c * a + b * (255 - a) + 127) // 255) << shift
+    return out
+
+
+def shade(color, delta):
+    """color with each RGB channel shifted by delta (clamped 0..255), alpha unchanged.
+    Negative darkens, positive lightens - a theme-independent way to get a second,
+    subtly different tone from an already-opaque color (e.g. for a gradient)."""
+    out = color & 0xFF000000
+    for shift in (0, 8, 16):
+        c = (color >> shift) & 0xFF
+        out |= max(0, min(255, c + delta)) << shift
+    return out
+
+
+# Colors may be transparent (#RRGGBBAA in the theme) - except the backgrounds: widgets erase
+# themselves with them before they redraw.
+BG = opaque(THEME.color("background"))    # screen background
+BAR = THEME.color("bar")                  # title bar
+# BAR may be translucent (e.g. the glass theme's near-transparent white); over(BAR, BG)
+# resolves it to the same opaque color the flat title bar already renders as today, so
+# the gradient stays correct for every theme instead of guessing at a second raw color.
+BAR_TOP = over(BAR, BG)
+BAR_LOW = shade(BAR_TOP, -14)              # subtly darker: bottom of the title bar
+DIALOG = opaque(THEME.color("dialog"))    # dialog background
+BORDER = THEME.color("border")            # outlines and separators
+PANEL = THEME.color("panel")              # widget background
+PANEL_HI = THEME.color("panel_hover")     # widget background when focused
+ACCENT = THEME.color("accent")            # focus ring, slider fill, selection
+ACCENT_TEXT = THEME.color("accent_text")  # text on ACCENT
+SELECTION = THEME.color("selection")      # selected row of a list without focus
+TEXT = THEME.color("text")
+MUTED = THEME.color("muted")
+DISABLED = THEME.color("disabled")
+SUCCESS = THEME.color("success")
+WARNING = THEME.color("warning")
+ERROR = THEME.color("error")
+ICON_BG = THEME.color("icon_bg")
+OVERLAY = THEME.color("overlay")          # dims the screen behind dialogs
+RADIUS = THEME.radius                     # corner radius in pixels, 0 = square corners
 
 SCALE = 2                          # text scale: characters are 16x32 pixels
 CHAR_W = gfx.FONT_WIDTH * SCALE
@@ -53,12 +105,138 @@ MARGIN = 24                        # space between the screen edges and a layout
 _DIRS = switch.UP | switch.DOWN | switch.LEFT | switch.RIGHT
 _REPEAT_DELAY = 400                # ms before a held direction starts repeating
 _REPEAT_RATE = 80                  # ms between repeats
+_DRAG_PX = 14                      # finger movement before a touch becomes a scroll drag, not a tap
 
 _stack = []                        # screens currently running (dialogs on top)
 
 
-def _text_w(text, scale=SCALE):
-    return gfx.text_width(text, scale)
+# ---------- text ----------
+# Smooth TrueType text (the font module with the theme's fonts), or the built-in pixel font
+# if either is missing. "scale" keeps its meaning for layouts: a line is 16 * scale pixels.
+
+UI_FONT = None                     # font ids from font.load(), None = pixel font
+MONO_FONT = None
+ITALIC_FONT = None                 # *italic* text in textview.py; None = no real slant
+_font = None
+try:
+    import font as _font
+    if THEME.fonts.get("ui"):
+        UI_FONT = _font.load(THEME.fonts["ui"])
+    if THEME.fonts.get("mono"):
+        MONO_FONT = _font.load(THEME.fonts["mono"])
+    if THEME.fonts.get("italic"):
+        ITALIC_FONT = _font.load(THEME.fonts["italic"])
+    if UI_FONT is not None and MONO_FONT is not None:
+        _font.fallback(UI_FONT, MONO_FONT)        # characters missing in the GUI font
+    if ITALIC_FONT is not None and UI_FONT is not None:
+        _font.fallback(ITALIC_FONT, UI_FONT)      # characters missing in the italic font
+except (ImportError, OSError):
+    pass
+
+_UNICODE = len("é") == 1           # str counts characters (else: UTF-8 bytes)
+
+
+def _chars(text):
+    """List of characters, also when strings are byte-based (no Unicode support)."""
+    if _UNICODE:
+        return list(text)
+    out = []
+    i = 0
+    while i < len(text):
+        b = ord(text[i])
+        n = 1 if b < 0x80 else 2 if b < 0xE0 else 3 if b < 0xF0 else 4
+        out.append(text[i:i + n])
+        i += n
+    return out
+
+
+def font_size(scale=SCALE):
+    """Pixel height of the TrueType font for a text scale: 16 px for scale 1, 30 for 2
+    (the lines stay 16 * scale pixels high, as with the pixel font)."""
+    return 14 * scale + 2
+
+
+def text(x, y, s, color=None, scale=SCALE, bold=False):
+    """Draw text with its top-left corner at (x, y); returns its width in pixels.
+    bold fakes a bolder stroke by drawing two extra passes, 1px right and 1px down -
+    there is no real bold face for either font backend, but this works with both of
+    them and (unlike a single offset pass) actually reads as bold at small sizes."""
+    if color is None:
+        color = TEXT
+    if UI_FONT is None:
+        w = gfx.text(x, y, s, color, scale)
+        if bold:
+            gfx.text(x + 1, y, s, color, scale)
+            gfx.text(x, y + 1, s, color, scale)
+        return w
+    size = font_size(scale)
+    line = gfx.FONT_HEIGHT * scale
+    top = y + (line - size) // 2
+    widest = 0
+    for i, part in enumerate(s.split("\n")):
+        ty = top + i * line
+        widest = max(widest, _font.text(UI_FONT, x, ty, part, color, size))
+        if bold:
+            _font.text(UI_FONT, x + 1, ty, part, color, size)
+            _font.text(UI_FONT, x, ty + 1, part, color, size)
+    return widest
+
+
+def text_width(s, scale=SCALE):
+    """Width of text in pixels (the widest line)."""
+    if UI_FONT is None:
+        return gfx.text_width(s, scale)
+    return _font.width(UI_FONT, s, font_size(scale))
+
+
+def elide(s, width, scale=SCALE):
+    """s, shortened with "…" at the end if it is wider than width pixels."""
+    if text_width(s, scale) <= width:
+        return s
+    chars = _chars(s)
+    lo, hi = 0, len(chars)
+    while lo < hi:                                  # the longest prefix that fits
+        mid = (lo + hi + 1) // 2
+        if text_width("".join(chars[:mid]) + "…", scale) <= width:
+            lo = mid
+        else:
+            hi = mid - 1
+    return "".join(chars[:lo]) + "…"
+
+
+# Monospace text (the script editor): zoom levels -> font pixel size
+MONO_SIZES = (13, 16, 20, 26)
+_mono_cells = {}
+
+
+def mono_cell(zoom):
+    """(column width, line height) in pixels of the monospace font at a zoom level."""
+    zoom = max(0, min(len(MONO_SIZES) - 1, zoom))
+    cell = _mono_cells.get(zoom)
+    if cell is None:
+        if MONO_FONT is None:
+            scale = 1 if zoom < 2 else 2
+            cell = (gfx.FONT_WIDTH * scale, gfx.FONT_HEIGHT * scale)
+        else:
+            size = MONO_SIZES[zoom]
+            width10 = _font.width(MONO_FONT, "M" * 10, size)   # exact to 1/10 pixel
+            cell = ((width10 + 5) // 10, size * 4 // 3)
+        _mono_cells[zoom] = cell
+    return cell
+
+
+def mono_text(x, y, s, color, zoom=1):
+    """Draw text on the monospace grid (one column per character); returns its width."""
+    zoom = max(0, min(len(MONO_SIZES) - 1, zoom))
+    if MONO_FONT is None:
+        return gfx.text(x, y, s, color, 1 if zoom < 2 else 2)
+    cw, ch = mono_cell(zoom)
+    size = MONO_SIZES[zoom]
+    return _font.text(MONO_FONT, x, y + (ch - size) // 2, s, color, size, cw)
+
+
+def _text_w(s, scale=SCALE):
+    return text_width(s, scale)
 
 
 def _lines(text):
@@ -81,11 +259,155 @@ def wrap(text, width):
 
 # ---------- base widget ----------
 
+# ---------- rounded boxes ----------
+# With the draw module (C) shapes are blended into the frame: transparent colors work and
+# rounded corners are smooth over any background. Without it corner images are made here
+# and transparent colors are mixed with the bg argument.
+
+try:
+    import draw as _draw
+except ImportError:
+    _draw = None
+
+
+def fill(x, y, w, h, color):
+    """A filled rectangle; transparent colors are blended with what is already there."""
+    if w <= 0 or h <= 0:
+        return
+    if _draw is not None:
+        _draw.rect(x, y, w, h, color)
+    else:
+        gfx.fill_rect(x, y, w, h, over(color, BG))
+
+
+_SAMPLES = 4                       # antialiasing: 4x4 samples per corner pixel
+_corner_cache = {}
+
+
+def _channels(c):
+    return c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF
+
+
+def _corners(r, fill, border, bw, bg):
+    """RGBA images of the four corners (top-left, top-right, bottom-left, bottom-right):
+    the fill and a border ring of width bw. Pixels fully outside the rounding are
+    transparent (whatever is below stays visible); edge pixels are blended with bg."""
+    key = (r, fill, border, bw, bg)
+    got = _corner_cache.get(key)
+    if got:
+        return got
+    if len(_corner_cache) > 128:
+        _corner_cache.clear()
+    fr, fg, fb = _channels(fill)
+    rr, rg, rb = _channels(border)
+    br, bgg, bb = _channels(bg)
+    outer2 = r * r
+    inner = max(0, r - bw)
+    inner2 = inner * inner
+    n = _SAMPLES * _SAMPLES
+    offsets = [(k + 0.5) / _SAMPLES for k in range(_SAMPLES)]
+    images = [bytearray(r * r * 4) for _ in range(4)]
+    tl, tr, bl, brc = images
+    for j in range(r):
+        for i in range(r):
+            a_out = a_in = 0
+            for oy in offsets:
+                dy = r - (j + oy)
+                dy2 = dy * dy
+                for ox in offsets:
+                    dx = r - (i + ox)
+                    d2 = dx * dx + dy2
+                    if d2 <= outer2:
+                        a_out += 1
+                        if d2 <= inner2:
+                            a_in += 1
+            if a_out == 0:
+                continue                    # outside: stays transparent (alpha 0)
+            w_bg, w_ring = n - a_out, a_out - a_in
+            px = ((br * w_bg + rr * w_ring + fr * a_in) // n,
+                  (bgg * w_bg + rg * w_ring + fg * a_in) // n,
+                  (bb * w_bg + rb * w_ring + fb * a_in) // n)
+            mi, mj = r - 1 - i, r - 1 - j
+            for img, x, y in ((tl, i, j), (tr, mi, j), (bl, i, mj), (brc, mi, mj)):
+                k = (y * r + x) * 4
+                img[k] = px[0]
+                img[k + 1] = px[1]
+                img[k + 2] = px[2]
+                img[k + 3] = 255
+    result = (bytes(tl), bytes(tr), bytes(bl), bytes(brc))
+    _corner_cache[key] = result
+    return result
+
+
+def box(
+    x,
+    y,
+    w,
+    h,
+    _fill,
+    border=None,
+    bw=0,
+    radius=None,
+    bg=None
+):
+    """A filled rectangle with rounded, antialiased corners and an optional border.
+    bg is the color around the box (the corners are blended into it);
+    radius None means the theme radius (RADIUS), 0 square corners."""
+    if w <= 0 or h <= 0:
+        return
+    r = RADIUS if radius is None else radius
+    r = max(0, min(r, w // 2, h // 2))
+    if _draw is not None:
+        _draw.rect(x, y, w, h, _fill, radius=r,
+                   border=border if bw > 0 else None, border_width=bw)
+        return
+    if bg is None:
+        bg = BG
+    bg = opaque(bg)
+    _fill = over(_fill, bg)
+    if border is None or bw <= 0:
+        border, bw = _fill, 0
+    else:
+        border = over(border, bg)
+    if r == 0:
+        gfx.fill_rect(x, y, w, h, border if bw else _fill)
+        if bw:
+            gfx.fill_rect(x + bw, y + bw, w - 2 * bw, h - 2 * bw, _fill)
+        return
+    gfx.fill_rect(x + r, y, w - 2 * r, h, _fill)
+    gfx.fill_rect(x, y + r, r, h - 2 * r, _fill)
+    gfx.fill_rect(x + w - r, y + r, r, h - 2 * r, _fill)
+    if bw:
+        gfx.fill_rect(x + r, y, w - 2 * r, bw, border)
+        gfx.fill_rect(x + r, y + h - bw, w - 2 * r, bw, border)
+        gfx.fill_rect(x, y + r, bw, h - 2 * r, border)
+        gfx.fill_rect(x + w - bw, y + r, bw, h - 2 * r, border)
+    tl, tr, bl, br = _corners(r, _fill, border, bw, bg)
+    gfx.blit(x, y, r, r, tl)
+    gfx.blit(x + w - r, y, r, r, tr)
+    gfx.blit(x, y + h - r, r, r, bl)
+    gfx.blit(x + w - r, y + h - r, r, r, br)
+
+
+def circle(cx, cy, radius, fill, border=None, bw=0, bg=None):
+    """A smooth filled circle (optionally with a border ring)."""
+    box(cx - radius, cy - radius, 2 * radius, 2 * radius, fill, border, bw, radius, bg)
+
+
+def set_rounded(radius):
+    """Change the corner radius of all widgets (0 = square corners) and redraw."""
+    global RADIUS
+    RADIUS = max(0, int(radius))
+    for scr in _stack:
+        scr._full_redraw = True
+
+
 class Widget:
     """Base class. Subclasses implement draw() and, if interactive, key/activate/touch."""
     focusable = False
     expand_w = False               # grows in width inside layouts
     expand_h = False               # grows in height inside layouts
+    focus_ring = True              # draw the focus ring around the whole widget
 
     def __init__(self, x, y, w, h):
         self.x, self.y, self.w, self.h = x, y, w, h
@@ -149,14 +471,18 @@ class Widget:
         bg = self.screen.bg if self.screen else BG
         w = max(self.w, self._old_w)
         h = max(self.h, self._old_h)
-        gfx.fill_rect(self.x - 4, self.y - 4, w + 8, h + 8, bg)
+        gfx.fill_rect(self.x - 4, self.y - 4, w + 8, h + 8, opaque(bg))
         self._old_w, self._old_h = self.w, self.h
         if self.visible:
+            if self.focused and self.focus_ring:
+                box(self.x - 4, self.y - 4, self.w + 8, self.h + 8, bg, ACCENT, 2,
+                    RADIUS + 4 if RADIUS else 0, bg)
             self.draw()
-            if self.focused:
-                for i in range(1, 4):
-                    gfx.rect(self.x - i, self.y - i, self.w + 2 * i, self.h + 2 * i, ACCENT)
         self._dirty = False
+
+    def bg(self):
+        """The color around the widget (for blending rounded corners)."""
+        return self.screen.bg if self.screen else BG
 
     def draw(self):
         pass
@@ -215,7 +541,7 @@ class Label(Widget):
             x += self.w - tw
         elif self.align == "center":
             x += (self.w - tw) // 2
-        gfx.text(x, self.y, self.text, self.color if self.enabled else DISABLED, self.scale)
+        text(x, self.y, self.text, self.color if self.enabled else DISABLED, self.scale)
 
 
 class Button(Widget):
@@ -235,10 +561,10 @@ class Button(Widget):
 
     def draw(self):
         fill = ACCENT if self._pressed else (PANEL_HI if self.focused else PANEL)
-        gfx.fill_rect(self.x, self.y, self.w, self.h, fill)
+        box(self.x, self.y, self.w, self.h, fill, None if self._pressed else BORDER, 1, bg=self.bg())
         tw = _text_w(self.text)
-        gfx.text(self.x + (self.w - tw) // 2, self.y + 10, self.text,
-                 TEXT if self.enabled else DISABLED, SCALE)
+        color = ACCENT_TEXT if self._pressed else (TEXT if self.enabled else DISABLED)
+        text(self.x + (self.w - tw) // 2, self.y + 10, self.text, color, SCALE)
 
     def activate(self):
         if not self.enabled:
@@ -272,12 +598,18 @@ class Checkbox(Widget):
             self.invalidate()
 
     def draw(self):
-        box = CHAR_H
-        gfx.fill_rect(self.x, self.y, box, box, PANEL_HI if self.focused else PANEL)
-        gfx.rect(self.x, self.y, box, box, MUTED)
+        size = CHAR_H - 4
+        x, y = self.x, self.y + 2
+        r = min(RADIUS, 6)
         if self.checked:
-            gfx.fill_rect(self.x + 7, self.y + 7, box - 14, box - 14, ACCENT)
-        gfx.text(self.x + box + 16, self.y, self.text, TEXT if self.enabled else DISABLED, SCALE)
+            box(x, y, size, size, ACCENT if self.enabled else DISABLED, radius=r, bg=self.bg())
+            for d in (-1, 0, 1):                         # a thick check mark
+                gfx.line(x + 6, y + 14 + d, x + 11, y + 19 + d, ACCENT_TEXT)
+                gfx.line(x + 11, y + 19 + d, x + 21, y + 8 + d, ACCENT_TEXT)
+        else:
+            box(x, y, size, size, PANEL_HI if self.focused else PANEL,
+                ACCENT if self.focused else MUTED, 2, r, self.bg())
+        text(self.x + CHAR_H + 16, self.y, self.text, TEXT if self.enabled else DISABLED, SCALE)
 
     def activate(self):
         if not self.enabled:
@@ -308,8 +640,8 @@ class Slider(Widget):
         return max(self.minimum, min(self.maximum, v))
 
     def _track(self):
-        # the value text takes the right part of the widget
-        return self.x, self.w - _text_w(str(self.maximum)) - 24
+        # the knob (radius 12) must stay inside the widget; the value text takes the right part
+        return self.x + 12, self.w - _text_w(str(self.maximum)) - 48
 
     def set(self, value):
         value = self._clamp(value)
@@ -324,10 +656,15 @@ class Slider(Widget):
         cy = self.y + self.h // 2
         span = self.maximum - self.minimum
         pos = tx + (tw * (self.value - self.minimum) // span if span else 0)
-        gfx.fill_rect(tx, cy - 4, tw, 8, PANEL)
-        gfx.fill_rect(tx, cy - 4, pos - tx, 8, ACCENT if self.enabled else DISABLED)
-        gfx.fill_circle(pos, cy, 12, TEXT if self.focused else MUTED)
-        gfx.text(tx + tw + 24, self.y, str(self.value), TEXT if self.enabled else DISABLED, SCALE)
+        bg = self.bg()
+        box(tx, cy - 3, tw, 6, BORDER, radius=3 if RADIUS else 0, bg=bg)
+        box(tx, cy - 3, pos - tx + 3, 6, ACCENT if self.enabled else DISABLED,
+            radius=3 if RADIUS else 0, bg=bg)
+        if RADIUS:
+            circle(pos, cy, 11, ACCENT_TEXT, ACCENT if self.focused else BORDER, 2, bg)
+        else:
+            fill(pos - 6, cy - 12, 12, 24, ACCENT if self.focused else MUTED)
+        text(tx + tw + 24, self.y, str(self.value), TEXT if self.enabled else DISABLED, SCALE)
 
     def key(self, down):
         if not self.enabled:
@@ -372,16 +709,20 @@ class ProgressBar(Widget):
             self.invalidate()
 
     def draw(self):
-        gfx.fill_rect(self.x, self.y, self.w, self.h, PANEL)
-        gfx.fill_rect(self.x, self.y, int(self.w * self.value), self.h, ACCENT)
+        r = min(RADIUS, self.h // 2)
+        box(self.x, self.y, self.w, self.h, PANEL, BORDER, 1, r, self.bg())
+        fw = int(self.w * self.value)
+        if fw > 0:
+            box(self.x, self.y, max(fw, 2 * r), self.h, ACCENT, radius=r, bg=PANEL)
         if self.show_percent:
             label = "%d%%" % int(self.value * 100 + 0.5)
-            gfx.text(self.x + (self.w - _text_w(label)) // 2, self.y, label, TEXT, SCALE)
+            text(self.x + (self.w - _text_w(label)) // 2, self.y, label, TEXT, SCALE)
 
 
 class ListBox(Widget):
     """Scrollable list of strings. Up/down moves the selection (at the edges the
     focus moves on to other widgets); A or a tap calls on_select(index, item).
+    Dragging a finger scrolls the list instead of selecting (touch only).
     on_change(index, item) is called whenever the selection moves.
     rows and w are the minimum size; inside layouts the list grows in both directions."""
     focusable = True
@@ -398,6 +739,7 @@ class ListBox(Widget):
         self.top = 0
         self.on_select = on_select
         self.on_change = on_change
+        self._dragging = False
         Widget.__init__(self, x, y, w, rows * self.ROW_H + 8)
 
     def hint(self):
@@ -438,23 +780,22 @@ class ListBox(Widget):
             self.on_change(index, self.items[index])
 
     def draw(self):
-        gfx.fill_rect(self.x, self.y, self.w, self.h, PANEL)
-        max_chars = (self.w - 32) // CHAR_W
+        box(self.x, self.y, self.w, self.h, PANEL, BORDER, 1, bg=self.bg())
         for row in range(self.rows):
             i = self.top + row
             if i >= len(self.items):
                 break
             ry = self.y + 4 + row * self.ROW_H
-            if i == self.selected:
-                gfx.fill_rect(self.x + 4, ry, self.w - 8, self.ROW_H, ACCENT if self.focused else PANEL_HI)
-            text = str(self.items[i])
-            if len(text) > max_chars:
-                text = text[:max_chars - 1] + "~"
-            gfx.text(self.x + 12, ry + 4, text, TEXT, SCALE)
+            selected = i == self.selected
+            if selected:
+                box(self.x + 4, ry, self.w - 8, self.ROW_H, ACCENT if self.focused else SELECTION,
+                    radius=max(0, RADIUS - 2), bg=PANEL)
+            label = elide(str(self.items[i]), self.w - 32)
+            text(self.x + 12, ry + 4, label, ACCENT_TEXT if selected and self.focused else TEXT, SCALE)
         if len(self.items) > self.rows:              # scroll indicator
             bar_h = max(16, (self.h - 8) * self.rows // len(self.items))
             bar_y = self.y + 4 + (self.h - 8 - bar_h) * self.top // (len(self.items) - self.rows)
-            gfx.fill_rect(self.x + self.w - 10, bar_y, 6, bar_h, MUTED)
+            box(self.x + self.w - 10, bar_y, 6, bar_h, MUTED, radius=3 if RADIUS else 0, bg=PANEL)
 
     def key(self, down):
         if down & switch.UP and self.selected > 0:
@@ -469,13 +810,31 @@ class ListBox(Widget):
         if self.items and self.on_select:
             self.on_select(self.selected, self.items[self.selected])
 
+    def _max_top(self):
+        return max(0, len(self.items) - self.rows)
+
     def touch(self, x, y, first):
         if first:
+            self._dragging = False
+            self._drag_y = y
+            self._drag_top = self.top
             row = (y - self.y - 4) // self.ROW_H
             self._select(self.top + row)
+            return
+        dy = y - self._drag_y
+        if not self._dragging and abs(dy) < _DRAG_PX:
+            return
+        self._dragging = True
+        rows = abs(dy) // self.ROW_H
+        top = max(0, min(self._max_top(), self._drag_top + (-rows if dy > 0 else rows)))
+        if top != self.top:
+            self.top = top
+            self.invalidate()
 
     def touch_end(self, inside):
-        if inside:
+        dragging = self._dragging
+        self._dragging = False
+        if inside and not dragging:
             self.activate()
 
 
@@ -743,6 +1102,7 @@ class Screen:
         self.result = None
         self._closed = False
         self._full_redraw = True
+        self._dimmed = False               # a dialog dims the screen below it once
         self._touching = False
         self._touch_w = None
         self._touch_pos = (0, 0)
@@ -819,18 +1179,22 @@ class Screen:
     def _redraw(self):
         if self.panel:
             px, py, pw, ph = self.panel
-            gfx.fill_rect(px - 6, py - 6, pw + 12, ph + 12, ACCENT)
-            gfx.fill_rect(px, py, pw, ph, self.bg)
+            if not self._dimmed:                  # once: the screen below stays as it is
+                self._dimmed = True
+                fill(0, 0, gfx.WIDTH, gfx.HEIGHT, OVERLAY)
+            box(px - 2, py - 2, pw + 4, ph + 4, self.bg, BORDER, 2,
+                RADIUS + 6 if RADIUS else 0, BG)
             if self.title:
-                gfx.fill_rect(px, py, pw, TITLE_H, BAR)
-                gfx.text(px + 20, py + 12, self.title, TEXT, SCALE)
+                text(px + 24, py + 12, self.title, TEXT, SCALE)
+                fill(px + 16, py + TITLE_H - 1, pw - 32, 1, BORDER)
         else:
             gfx.clear(BG)
             if self.title:
-                gfx.fill_rect(0, 0, gfx.WIDTH, TITLE_H, BAR)
-                gfx.text(24, 12, self.title, TEXT, SCALE)
+                gfx.fill_gradient(0, 0, gfx.WIDTH, TITLE_H, BAR_TOP, BAR_LOW)
+                fill(0, TITLE_H - 1, gfx.WIDTH, 1, BORDER)
+                text(24, 12, self.title, TEXT, SCALE)
             if self.hint:
-                gfx.text(24, gfx.HEIGHT - FOOTER_H + 12, self.hint, MUTED, 1)
+                text(24, gfx.HEIGHT - FOOTER_H + 12, self.hint, MUTED, 1)
         for w in self.widgets:
             w.invalidate()
         self._full_redraw = False

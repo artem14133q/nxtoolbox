@@ -25,6 +25,15 @@ import os
 import switch
 import nxapp
 import ui
+import tabs
+import systab
+import usbtab
+import usbdisk_tab
+import tiles
+import modinfo
+import settings_tab
+import docs_tab
+import about_tab
 
 ROOT = "/switch/NXToolBox/scripts"
 VERSION_FILE = "/switch/NXToolBox/sys/VERSION"
@@ -60,15 +69,15 @@ class Launcher:
         self.items = []
         self._battery_at = 0
 
-        scr = ui.Screen("NXToolBox",
-                        hint="A: open / run   B: back   Y: refresh   X: delete   R: get scripts   +: exit",
-                        on_back=self.back, on_key=self.key)
+        scr = tabs.TabScreen("NXToolBox",
+                             hint="A: open / run   B: back   ZR: edit   ZL: new   Y: refresh   X: delete   +: exit",
+                             on_back=self.back, on_key=self.key)
         self.scr = scr
 
         # Left: current folder, file list (takes all free space), status line
         left = ui.VBox(spacing=12)
         self.path = left.add(ui.Label("", color=ui.MUTED))
-        self.list = left.add(ui.ListBox(rows=8, w=600, on_select=self.open))
+        self.list = left.add(tiles.TileGrid(describe=self.describe, on_select=self.open))
         self.status = left.add(ui.Label("", color=ui.MUTED))
 
         # Right: connection info
@@ -95,7 +104,29 @@ class Launcher:
         root = ui.HBox(spacing=48)
         root.add(left, stretch=1)
         root.add(right)
-        scr.set_layout(root)
+        scr.add_tab("Files", root)
+
+        self.system = systab.SystemTab()
+        scr.add_tab("System", self.system.layout, update=self.system.update,
+                    on_key=self.system.key, hint="Y: show / hide serial   +: exit")
+
+        self.usb = usbtab.UsbTab()
+        scr.add_tab("USB", self.usb.layout, update=self.usb.update,
+                    on_key=self.usb.key, hint="Y: refresh   +: exit")
+
+        self.usb_disk = usbdisk_tab.UsbDiskTab(scr)
+        scr.add_tab("USB Drive", self.usb_disk.layout, update=self.usb_disk.update,
+                    on_key=self.usb_disk.key, hint="A: open / copy   B: back   Y: refresh   +: exit")
+
+        self.settings = settings_tab.SettingsTab(on_restart=self.restart_ui)
+        scr.add_tab("Settings", self.settings.layout,
+                    hint="A: apply theme   Left/Right: rounding   +: exit")
+
+        self.docs = docs_tab.DocsTab()
+        scr.add_tab("Docs", self.docs.layout, hint="A: open page   Up/Down or drag: scroll   +: exit")
+
+        self.about = about_tab.AboutTab()
+        scr.add_tab("About", self.about.layout, hint="Up/Down or drag: scroll   +: exit")
         scr.update = self.update
 
         if not self.refresh(remembered) and self.folder:
@@ -103,6 +134,10 @@ class Launcher:
             self.refresh()
 
     # ---------- file list ----------
+
+    def describe(self, name):
+        """Tile of a folder or script (title, description and icon from __NXTOOLBOX_MODULE__)."""
+        return modinfo.tile_info(self.folder_path(), name, tiles.ICON, tiles.ICON_BG)
 
     def folder_path(self):
         return ROOT + "/" + self.folder if self.folder else ROOT
@@ -129,6 +164,7 @@ class Launcher:
         dirs.sort(key=sort_key)
         files.sort(key=sort_key)
         self.items = dirs + files
+        self.list.forget()                              # re-read descriptions and icons
         self.list.set_items(self.items)
         if select in self.items:
             self.list.select(self.items.index(select))
@@ -191,6 +227,8 @@ class Launcher:
         self.scr.close()
 
     def back(self):
+        if self.scr.tab != 0:                           # B does nothing outside the file list
+            return
         if not self.folder:
             self.status.set_text("Press + to exit NXToolBox")
             return
@@ -214,6 +252,45 @@ class Launcher:
                 self.status.set_text("Cannot delete: %s" % e)
             self.refresh()
 
+    def edit_selected(self):
+        """Open the selected script in the editor (ZR)."""
+        name = self.list.selected_item()
+        if not name or not name.endswith(".py"):
+            self.status.set_text("Select a .py file to edit")
+            return
+        self.open_editor(self.folder_path() + "/" + name)
+
+    def new_script(self):
+        """Create a script in the current folder and open it (ZL)."""
+        import editor
+        name = switch.keyboard("", "New script name")
+        if not name:
+            return
+        name = name.strip().replace("/", "_")
+        if not name.endswith(".py"):
+            name += ".py"
+        path = self.folder_path() + "/" + name
+        if not editor.create(path):
+            self.status.set_text(name + " already exists, opening it")
+        self.refresh(name)
+        self.open_editor(path)
+
+    def open_editor(self, path):
+        import editor
+        action = editor.edit(path)
+        self.refresh(path.split("/")[-1])
+        self.scr.relayout()                             # the editor drew over the whole screen
+        if action == "run":                             # Ctrl+F5: run the saved file full screen
+            self.remember()
+            nxapp.run(path)
+            self.scr.close()
+
+    def restart_ui(self):
+        """Start the launcher again (a new theme is loaded on start)."""
+        self.remember()
+        nxapp.restart()
+        self.scr.close()
+
     def open_store(self):
         import store                                    # loaded only when needed
         path = store.run()
@@ -225,13 +302,18 @@ class Launcher:
         self.refresh(self.list.selected_item())
 
     def key(self, down):
-        if down & switch.R:
-            self.open_store()
-            return True
         if down & switch.PLUS:
             if ui.confirm("Exit NXToolBox?", title="Exit", yes="Exit", no="Stay"):
                 nxapp.quit()
                 self.scr.close()
+            return True
+        if self.scr.tab != 0:                           # the keys below are for the file list
+            return False
+        if down & switch.ZR:
+            self.edit_selected()
+            return True
+        if down & switch.ZL:
+            self.new_script()
             return True
         if down & switch.Y:
             self.refresh(self.list.selected_item())

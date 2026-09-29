@@ -65,6 +65,13 @@ def rect(x: int, y: int, w: int, h: int, color: int) -> None:
 def fill_rect(x: int, y: int, w: int, h: int, color: int) -> None: ...
 
 
+def fill_gradient(x: int, y: int, w: int, h: int, color1: int, color2: int, vertical: bool = True) -> None:
+    """Rectangle filled with a linear gradient from color1 to color2: top-to-bottom if
+    vertical (the default), left-to-right otherwise. All four channels (R, G, B, A) are
+    interpolated."""
+    ...
+
+
 def circle(x: int, y: int, r: int, color: int) -> None:
     """Circle outline centered at (x, y)."""
     ...

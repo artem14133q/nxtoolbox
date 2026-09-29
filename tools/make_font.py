@@ -32,10 +32,12 @@ RANGES = [
 
 def render(font, ch):
     """Returns a 16x16 1-bit image of the glyph (wide enough to detect wide glyphs)."""
-    im = Image.new("1", (16, 16), 0)
+    im = Image.new("L", (32, 32), 0)  # Higher resolution image for anti-aliasing
     d = ImageDraw.Draw(im)
-    d.fontmode = "1"
-    d.text((0, 0), ch, font=font, fill=1)
+    d.fontmode = "L"
+    d.text((0, 0), ch, font=font, fill=255)
+    im = im.resize((16, 16), Image.ANTIALIAS)  # Downscale with anti-aliasing
+    im = im.convert("1")  # Convert to 1-bit image
     return im
 
 

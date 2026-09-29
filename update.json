@@ -1,13 +1,33 @@
 {
-  "version": "20260926231547",
+  "version": "20260929095116",
   "files": {
     "launcher.py": "app/launcher.py",
+    "lib/about_tab.py": "lib/about_tab.py",
+    "lib/docs_tab.py": "lib/docs_tab.py",
+    "lib/editor.py": "lib/editor.py",
+    "lib/fat.py": "lib/fat.py",
     "lib/installer.py": "lib/installer.py",
+    "lib/keys.py": "lib/keys.py",
+    "lib/markdown.py": "lib/markdown.py",
+    "lib/modinfo.py": "lib/modinfo.py",
     "lib/requests.py": "lib/requests.py",
+    "lib/settings_tab.py": "lib/settings_tab.py",
     "lib/store.py": "lib/store.py",
+    "lib/systab.py": "lib/systab.py",
+    "lib/tabs.py": "lib/tabs.py",
+    "lib/textview.py": "lib/textview.py",
+    "lib/theme.py": "lib/theme.py",
+    "lib/tiles.py": "lib/tiles.py",
     "lib/ui.py": "lib/ui.py",
+    "lib/usbdisk_tab.py": "lib/usbdisk_tab.py",
     "lib/usbhid.py": "lib/usbhid.py",
+    "lib/usbmsc.py": "lib/usbmsc.py",
     "lib/usbserial.py": "lib/usbserial.py",
-    "cacert.pem": "cacert.pem"
+    "lib/usbtab.py": "lib/usbtab.py",
+    "cacert.pem": "cacert.pem",
+    "themes/contrast.ini": "themes/contrast.ini",
+    "themes/dark.ini": "themes/dark.ini",
+    "themes/glass.ini": "themes/glass.ini",
+    "themes/light.ini": "themes/light.ini"
   }
 }

@@ -17,6 +17,17 @@
 //      Command 'U' (upload): 2-byte path length + path (UTF-8, relative to /switch/NXToolBox,
 //        '/' separator) + 4-byte size + file contents.
 //        The Switch replies "ok <size>" or "error: ..." and closes the connection.
+//      Command 'S' (screenshot): no further input.
+//        The Switch replies with a 1-byte status: 1 + 4-byte width + 4-byte height +
+//        width*height*4 bytes of raw RGBA8888 (row by row); or 0 + "error: ..." if
+//        graphics mode is not active.
+//      Command 'I' (input, for automated testing): 1-byte action, then:
+//        0 button: 4-byte button mask + 2-byte hold_ms - holds mask, releases after hold_ms
+//        1 tap:    2-byte x, y, hold_ms - a synthetic touch at (x, y)
+//        2 swipe:  2-byte x0, y0, x1, y1, duration_ms - touch moving from (x0,y0) to (x1,y1)
+//        3 release: (no payload) cancels any pending synthetic input right away
+//        Applied over the app's own frame loop, never blocks; the Switch replies "ok" or
+//        "error: ..." right away, not once the hold/duration has actually elapsed.
 
 #include <switch.h>
 #include <stdio.h>
@@ -688,6 +699,65 @@ static void handle_upload(const int client) {
     send_str(client, msg);
 }
 
+// Sends the current on-screen frame as raw pixels, for send.py screenshot: 4-byte
+// width + 4-byte height (big-endian), then width*height*4 bytes RGBA, row by row.
+// A pure C-side read of the frame buffer - unlike 'R', it never touches MicroPython,
+// so it works regardless of what the interpreter is doing (the launcher, a script, ...).
+static void handle_screenshot(const int client) {
+    uint32_t stride;
+    uint32_t * const buf = gfx_hw_buffer(&stride);
+    if (!buf) {
+        send_all(client, "\x00", 1);
+        send_str(client, "error: graphics mode is not active\n");
+        return;
+    }
+    if (send_all(client, "\x01", 1) < 0) return;
+    const uint32_t header[2] = { htonl(GFX_WIDTH), htonl(GFX_HEIGHT) };
+    if (send_all(client, (const char *)header, sizeof(header)) < 0) return;
+    for (uint32_t y = 0; y < GFX_HEIGHT; y++) {
+        if (send_all(client, (const char *)(buf + (size_t)y * stride), GFX_WIDTH * 4) < 0) return;
+    }
+}
+
+// Synthetic input for automated testing: applies over a few frames of the app's own
+// loop (see hw_remote_press/hw_remote_touch), so it never blocks here - this handler
+// just records what to fake and replies right away.
+static void handle_input(const int client) {
+    u8 action;
+    if (recv_all(client, &action, 1) < 0) return;
+    switch (action) {
+        case 0: {   // button: 4-byte mask + 2-byte hold_ms (big-endian)
+            u8 buf[6];
+            if (recv_all(client, buf, sizeof(buf)) < 0) return;
+            u32 mask; memcpy(&mask, buf, 4);
+            u16 hold; memcpy(&hold, buf + 4, 2);
+            hw_remote_press(ntohl(mask), ntohs(hold));
+            send_str(client, "ok\n");
+            return;
+        }
+        case 1: {   // tap: 2-byte x, y, hold_ms
+            u16 v[3];
+            if (recv_all(client, v, sizeof(v)) < 0) return;
+            hw_remote_touch(ntohs(v[0]), ntohs(v[1]), ntohs(v[0]), ntohs(v[1]), ntohs(v[2]));
+            send_str(client, "ok\n");
+            return;
+        }
+        case 2: {   // swipe: 2-byte x0, y0, x1, y1, duration_ms
+            u16 v[5];
+            if (recv_all(client, v, sizeof(v)) < 0) return;
+            hw_remote_touch(ntohs(v[0]), ntohs(v[1]), ntohs(v[2]), ntohs(v[3]), ntohs(v[4]));
+            send_str(client, "ok\n");
+            return;
+        }
+        case 3:     // release: cancel whatever is pending, no payload
+            hw_remote_cancel();
+            send_str(client, "ok\n");
+            return;
+        default:
+            send_str(client, "error: unknown input action\n");
+    }
+}
+
 // ---------- connection handling ----------
 
 static bool handle_run(int client);
@@ -726,6 +796,8 @@ static bool handle_client(const int client) {
     switch (cmd) {
         case 'R': return handle_run(client);
         case 'U': handle_upload(client); return false;
+        case 'S': handle_screenshot(client); return false;
+        case 'I': handle_input(client); return false;
         default:  send_str(client, "error: unknown command\n"); return false;
     }
 }
